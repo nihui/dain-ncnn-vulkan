@@ -1,5 +1,5 @@
 7767517
-95 119
+101 127
 Input                    input0                   0 1 input0
 Split                    splitncnn_input0         1 2 input0 cur_input_0_splitncnn_0 cur_input_0_splitncnn_1
 Input                    input1                   0 1 input1
@@ -10,6 +10,12 @@ Input                    depth1                   0 1 depth1
 Split                    splitncnn_input3         1 2 depth1 log_depth1_splitncnn_0 log_depth1_splitncnn_1
 Input                    flow0                    0 1 flow0
 Input                    flow1                    0 1 flow1
+Input                    flow0_w                  0 1 flow0_w
+Input                    flow1_w                  0 1 flow1_w
+Split                    splitncnn_flow0_w        1 2 flow0_w flow0_w_splitncnn_0 flow0_w_splitncnn_1
+Split                    splitncnn_flow1_w        1 2 flow1_w flow1_w_splitncnn_0 flow1_w_splitncnn_1
+BinaryOp                 flow0xw                  2 1 flow0 flow0_w_splitncnn_1 flow0xw 0=2
+BinaryOp                 flow1xw                  2 1 flow1 flow1_w_splitncnn_1 flow1xw 0=2
 Input                    ctx0                     0 1 ctx0
 Input                    ctx1                     0 1 ctx1
 Concat                   Concat_0                 2 1 cur_input_0_splitncnn_1 cur_input_2_splitncnn_1 962
@@ -62,9 +68,9 @@ UnaryOp                  Exp_60                   1 1 log_depth1_splitncnn_0 106
 BinaryOp                 Div_62                   1 1 1062 1064 0=8 1=1 2=1.000000e+00
 BinaryOp                 Mul_64                   1 1 1064 1066 0=2 1=1 2=1.000000e+00
 BinaryOp                 Add_66                   1 1 1066 1068 1=1 2=1.000000e-06
-dain.DepthFlowProjection DepthFlowProjection_1079 2 1 flow0 1061 1079
+dain.DepthFlowProjection DepthFlowProjection_1079 2 1 flow0xw 1061 1079
 Split                    splitncnn_8              1 3 1079 1079_splitncnn_0 1079_splitncnn_1 1079_splitncnn_2
-dain.DepthFlowProjection DepthFlowProjection_1090 2 1 flow1 1068 1090
+dain.DepthFlowProjection DepthFlowProjection_1090 2 1 flow1xw 1068 1090
 Split                    splitncnn_9              1 3 1090 1090_splitncnn_0 1090_splitncnn_1 1090_splitncnn_2
 dain.FilterInterpolation FilterInterpolation_1101 3 1 963 1079_splitncnn_2 1051_splitncnn_2 1101
 dain.FilterInterpolation FilterInterpolation_1112 3 1 964 1090_splitncnn_2 1054_splitncnn_2 1112
@@ -72,8 +78,8 @@ dain.FilterInterpolation FilterInterpolation_1123 3 1 cur_input_0_splitncnn_0 10
 Split                    splitncnn_10             1 2 1123 1123_splitncnn_0 1123_splitncnn_1
 dain.FilterInterpolation FilterInterpolation_1134 3 1 cur_input_2_splitncnn_0 1090_splitncnn_1 1054_splitncnn_1 1134
 Split                    splitncnn_11             1 2 1134 1134_splitncnn_0 1134_splitncnn_1
-BinaryOp                 Div_110                  1 1 1123_splitncnn_1 1136 0=3 1=1 2=2.000000e+00
-BinaryOp                 Div_112                  1 1 1134_splitncnn_1 1138 0=3 1=1 2=2.000000e+00
+BinaryOp                 Div_110                  2 1 1123_splitncnn_1 flow1_w_splitncnn_0 1136 0=2
+BinaryOp                 Div_112                  2 1 1134_splitncnn_1 flow0_w_splitncnn_0 1138 0=2
 BinaryOp                 Add_113                  2 1 1136 1138 1139
 Split                    splitncnn_12             1 2 1139 1139_splitncnn_0 1139_splitncnn_1
 Concat                   Concat_114               9 1 1139_splitncnn_1 1123_splitncnn_0 1134_splitncnn_0 1079_splitncnn_0 1090_splitncnn_0 1051_splitncnn_0 1054_splitncnn_0 1101 1112 1140

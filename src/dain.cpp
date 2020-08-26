@@ -132,6 +132,11 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
     }
 
     // interpolation
+    ncnn::Mat flow0_w(1);
+    ncnn::Mat flow1_w(1);
+    flow0_w[0] = 0.5f;
+    flow1_w[0] = 0.5f;
+
     ncnn::Mat out_padded;
     {
         ncnn::Extractor ex = interpolation.create_extractor();
@@ -141,6 +146,8 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
         ex.input("depth1", depth1);
         ex.input("flow0", flow0);
         ex.input("flow1", flow1);
+        ex.input("flow0_w", flow0_w);
+        ex.input("flow1_w", flow1_w);
         ex.input("ctx0", ctx0);
         ex.input("ctx1", ctx1);
         ex.extract("output_rectified", out_padded);
