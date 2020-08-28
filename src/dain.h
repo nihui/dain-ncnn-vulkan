@@ -23,6 +23,8 @@ private:
     ncnn::Net flownet;
     ncnn::Net ctxnet;
     ncnn::Net interpolation;
+
+    ncnn::VulkanDevice* vkdev;
 };
 
 #endif // DAIN_H
