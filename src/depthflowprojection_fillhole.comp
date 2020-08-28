@@ -1,0 +1,120 @@
+// dain implemented with ncnn library
+
+#version 450
+
+#if NCNN_fp16_storage
+#extension GL_EXT_shader_16bit_storage: require
+#endif
+#if NCNN_fp16_arithmetic
+#extension GL_EXT_shader_explicit_arithmetic_types_float16: require
+#endif
+
+layout (binding = 0) readonly buffer count_blob { sfp count_blob_data[]; };
+layout (binding = 1) buffer top_blob { sfp top_blob_data[]; };
+
+layout (push_constant) uniform parameter
+{
+    int w;
+    int h;
+    int c;
+    int cstep;
+} p;
+
+void main()
+{
+    int gx = int(gl_GlobalInvocationID.x);
+    int gy = int(gl_GlobalInvocationID.y);
+    int gz = int(gl_GlobalInvocationID.z);
+
+    if (gx >= p.w || gy >= p.h || gz >= 1)
+        return;
+
+    afp count = buffer_ld1(count_blob_data, gy * p.w + gx);
+    if (count > afp(0.f))
+        return;
+
+    afp fxd = afp(0.f);
+    afp fyd = afp(0.f);
+    count = afp(0.f);
+
+    // left
+    {
+        int left_x = gx - 1;
+        while (left_x >= 0)
+        {
+            afp left_count = buffer_ld1(count_blob_data, gy * p.w + left_x);
+            if (left_count > afp(0.f))
+            {
+                fxd += buffer_ld1(top_blob_data, gy * p.w + left_x);
+                fyd += buffer_ld1(top_blob_data, p.cstep + gy * p.w + left_x);
+                count += afp(1.f);
+                break;
+            }
+
+            left_x -= 1;
+        }
+    }
+
+    // right
+    {
+        int right_x = gx + 1;
+        while (right_x <= p.w - 1)
+        {
+            afp right_count = buffer_ld1(count_blob_data, gy * p.w + right_x);
+            if (right_count > afp(0.f))
+            {
+                fxd += buffer_ld1(top_blob_data, gy * p.w + right_x);
+                fyd += buffer_ld1(top_blob_data, p.cstep + gy * p.w + right_x);
+                count += afp(1.f);
+                break;
+            }
+
+            right_x += 1;
+        }
+    }
+
+    // up
+    {
+        int up_y = gy - 1;
+        while (up_y >= 0)
+        {
+            afp up_count = buffer_ld1(count_blob_data, up_y * p.w + gx);
+            if (up_count > afp(0.f))
+            {
+                fxd += buffer_ld1(top_blob_data, up_y * p.w + gx);
+                fyd += buffer_ld1(top_blob_data, p.cstep + up_y * p.w + gx);
+                count += afp(1.f);
+                break;
+            }
+
+            up_y -= 1;
+        }
+    }
+
+    // down
+    {
+        int down_y = gy + 1;
+        while (down_y >= 0)
+        {
+            afp down_count = buffer_ld1(count_blob_data, down_y * p.w + gx);
+            if (down_count > afp(0.f))
+            {
+                fxd += buffer_ld1(top_blob_data, down_y * p.w + gx);
+                fyd += buffer_ld1(top_blob_data, p.cstep + down_y * p.w + gx);
+                count += afp(1.f);
+                break;
+            }
+
+            down_y += 1;
+        }
+    }
+
+    if (count > afp(0.f))
+    {
+        fxd /= count;
+        fyd /= count;
+
+        buffer_st1(top_blob_data, gy * p.w + gx, fxd);
+        buffer_st1(top_blob_data, p.cstep + gy * p.w + gx, fyd);
+    }
+}

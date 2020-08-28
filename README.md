@@ -32,9 +32,8 @@ Input two frame images, output one interpolated frame image.
 
 ### TODO
 
-* interpolate rate control
-* add more DAIN models
-* port all custom layers to vulkan
+* ~~interpolate rate control~~
+* ~~port all custom layers to vulkan~~
 * port pre-process and post-process to vulkan
 * tiled process for reducing VRAM
 * github action ci

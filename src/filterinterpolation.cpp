@@ -2,10 +2,61 @@
 
 #include "dain_ops.h"
 
-int FilterInterpolation::forward(const std::vector<ncnn::Mat>& bottom_blobs, std::vector<ncnn::Mat>& top_blobs, const ncnn::Option& opt) const
-{
-    using namespace ncnn;
+#include "filterinterpolation.comp.hex.h"
+#include "filterinterpolation_pack4.comp.hex.h"
 
+using namespace ncnn;
+
+FilterInterpolation::FilterInterpolation()
+{
+    support_vulkan = true;
+
+    pipeline_filterinterpolation = 0;
+    pipeline_filterinterpolation_pack4 = 0;
+}
+
+int FilterInterpolation::create_pipeline(const Option& opt)
+{
+    std::vector<vk_specialization_type> specializations(0 + 0);
+
+    // pack1
+    {
+        // TODO static
+        std::vector<uint32_t> spirv;
+        compile_spirv_module(filterinterpolation_comp_data, sizeof(filterinterpolation_comp_data), opt, spirv);
+
+        pipeline_filterinterpolation = new Pipeline(vkdev);
+        pipeline_filterinterpolation->set_optimal_local_size_xyz();
+        pipeline_filterinterpolation->create(spirv.data(), spirv.size() * 4, specializations);
+    }
+
+    // pack4
+    {
+        // TODO static
+        std::vector<uint32_t> spirv;
+        compile_spirv_module(filterinterpolation_pack4_comp_data, sizeof(filterinterpolation_pack4_comp_data), opt, spirv);
+
+        pipeline_filterinterpolation_pack4 = new Pipeline(vkdev);
+        pipeline_filterinterpolation_pack4->set_optimal_local_size_xyz();
+        pipeline_filterinterpolation_pack4->create(spirv.data(), spirv.size() * 4, specializations);
+    }
+
+    return 0;
+}
+
+int FilterInterpolation::destroy_pipeline(const Option& opt)
+{
+    delete pipeline_filterinterpolation;
+    pipeline_filterinterpolation = 0;
+
+    delete pipeline_filterinterpolation_pack4;
+    pipeline_filterinterpolation_pack4 = 0;
+
+    return 0;
+}
+
+int FilterInterpolation::forward(const std::vector<Mat>& bottom_blobs, std::vector<Mat>& top_blobs, const Option& opt) const
+{
     const Mat& image_blob = bottom_blobs[0];
     const Mat& flow_blob = bottom_blobs[1];
     const Mat& filter_blob = bottom_blobs[2];
@@ -125,6 +176,48 @@ int FilterInterpolation::forward(const std::vector<ncnn::Mat>& bottom_blobs, std
                 outptr += 1;
             }
         }
+    }
+
+    return 0;
+}
+
+int FilterInterpolation::forward(const std::vector<VkMat>& bottom_blobs, std::vector<VkMat>& top_blobs, VkCompute& cmd, const Option& opt) const
+{
+    const VkMat& image_blob = bottom_blobs[0];
+    const VkMat& flow_blob = bottom_blobs[1];
+    const VkMat& filter_blob = bottom_blobs[2];
+
+    int w = image_blob.w;
+    int h = image_blob.h;
+    int channels = image_blob.c;
+    size_t elemsize = image_blob.elemsize;
+    int elempack = image_blob.elempack;
+
+    VkMat& top_blob = top_blobs[0];
+    top_blob.create(w, h, channels, elemsize, elempack, opt.blob_vkallocator);
+    if (top_blob.empty())
+        return -100;
+
+    std::vector<VkMat> bindings(4);
+    bindings[0] = image_blob;
+    bindings[1] = flow_blob;
+    bindings[2] = filter_blob;
+    bindings[3] = top_blob;
+
+    std::vector<vk_constant_type> constants(5);
+    constants[0].i = top_blob.w;
+    constants[1].i = top_blob.h;
+    constants[2].i = top_blob.c;
+    constants[3].i = top_blob.cstep;
+    constants[4].i = filter_blob.cstep;
+
+    if (elempack == 4)
+    {
+        cmd.record_pipeline(pipeline_filterinterpolation_pack4, bindings, constants, top_blob);
+    }
+    else // if (elempack == 1)
+    {
+        cmd.record_pipeline(pipeline_filterinterpolation, bindings, constants, top_blob);
     }
 
     return 0;

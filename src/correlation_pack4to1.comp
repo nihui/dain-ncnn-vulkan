@@ -1,0 +1,61 @@
+// dain implemented with ncnn library
+
+#version 450
+
+#if NCNN_fp16_storage
+#extension GL_EXT_shader_16bit_storage: require
+#endif
+#if NCNN_fp16_arithmetic
+#extension GL_EXT_shader_explicit_arithmetic_types_float16: require
+#endif
+
+layout (binding = 0) readonly buffer a_blob { sfpvec4 a_blob_data[]; };
+layout (binding = 1) readonly buffer b_blob { sfpvec4 b_blob_data[]; };
+layout (binding = 2) writeonly buffer top_blob { sfp top_blob_data[]; };
+
+layout (push_constant) uniform parameter
+{
+    int w;
+    int h;
+    int c;
+    int cstep;
+
+    int outw;
+    int outh;
+    int outc;
+    int outcstep;
+} p;
+
+void main()
+{
+    int gx = int(gl_GlobalInvocationID.x);
+    int gy = int(gl_GlobalInvocationID.y);
+    int gz = int(gl_GlobalInvocationID.z);
+
+    if (gx >= p.outw || gy >= p.outh || gz >= p.outc)
+        return;
+
+    int tj = gz / 9;
+    int ti = gz % 9;
+
+    afpvec4 sum4 = afpvec4(0.f);
+
+    int a_offset = (gy + 4) * p.w + gx + 4;
+    int b_offset = (gy + tj) * p.w + gx + ti;
+
+    for (int z = 0; z < p.c; z++)
+    {
+        sum4 += buffer_ld4(a_blob_data, a_offset) * buffer_ld4(b_blob_data, b_offset);
+
+        a_offset += p.cstep;
+        b_offset += p.cstep;
+    }
+
+    afp sum = sum4[0] + sum4[1] + sum4[2] + sum4[3];
+
+    sum /= afp(p.c) * afp(4);
+
+    const int gi = gz * p.outcstep + gy * p.outw + gx;
+
+    buffer_st1(top_blob_data, gi, sum);
+}

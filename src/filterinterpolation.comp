@@ -1,0 +1,113 @@
+// dain implemented with ncnn library
+
+#version 450
+
+#if NCNN_fp16_storage
+#extension GL_EXT_shader_16bit_storage: require
+#endif
+#if NCNN_fp16_arithmetic
+#extension GL_EXT_shader_explicit_arithmetic_types_float16: require
+#endif
+
+layout (binding = 0) readonly buffer image_blob { sfp image_blob_data[]; };
+layout (binding = 1) readonly buffer flow_blob { sfp flow_blob_data[]; };
+layout (binding = 2) readonly buffer filter_blob { sfpvec4 filter_blob_data[]; };
+layout (binding = 3) writeonly buffer top_blob { sfp top_blob_data[]; };
+
+layout (push_constant) uniform parameter
+{
+    int w;
+    int h;
+    int c;
+    int cstep;
+
+    int filter_cstep;
+} p;
+
+void main()
+{
+    int gx = int(gl_GlobalInvocationID.x);
+    int gy = int(gl_GlobalInvocationID.y);
+    int gz = int(gl_GlobalInvocationID.z);
+
+    if (gx >= p.w || gy >= p.h || gz >= p.c)
+        return;
+
+    afp flow_x = buffer_ld1(flow_blob_data, gy * p.w + gx);
+    afp flow_y = buffer_ld1(flow_blob_data, p.cstep + gy * p.w + gx);
+
+    afp sample_x = afp(gx) + flow_x;
+    afp sample_y = afp(gy) + flow_y;
+
+    afp v;
+
+    if (sample_x < afp(0.f) || sample_y < afp(0.f) || sample_x >= afp(p.w - 1) || sample_y >= afp(p.h - 1)
+        || abs(flow_x) > afp(p.w) / afp(2.f) || abs(flow_y) > afp(p.h) / afp(2.f))
+    {
+        // the warping data is out of range, we fill it with zeros
+        v = buffer_ld1(image_blob_data, gz * p.cstep + gy * p.w + gx);
+    }
+    else
+    {
+        // 4x4
+        int x1 = int(floor(sample_x));
+        int y1 = int(floor(sample_y));
+        int x0 = x1 - 1;
+        int y0 = y1 - 1;
+        int x2 = x1 + 1;
+        int y2 = y1 + 1;
+        int x3 = x1 + 2;
+        int y3 = y1 + 2;
+
+        afp alpha = sample_x - afp(x1);
+        afp beta = sample_y - afp(y1);
+
+        // sanitize out of image
+        x0 = min(max(x0, 0), p.w - 1);
+        x1 = min(max(x1, 0), p.w - 1);
+        x2 = min(max(x2, 0), p.w - 1);
+        x3 = min(max(x3, 0), p.w - 1);
+        y0 = min(max(y0, 0), p.h - 1);
+        y1 = min(max(y1, 0), p.h - 1);
+        y2 = min(max(y2, 0), p.h - 1);
+        y3 = min(max(y3, 0), p.h - 1);
+
+        afp v00 = buffer_ld1(image_blob_data, gz * p.cstep + y0 * p.w + x0);
+        afp v01 = buffer_ld1(image_blob_data, gz * p.cstep + y0 * p.w + x1);
+        afp v02 = buffer_ld1(image_blob_data, gz * p.cstep + y0 * p.w + x2);
+        afp v03 = buffer_ld1(image_blob_data, gz * p.cstep + y0 * p.w + x3);
+
+        afp v10 = buffer_ld1(image_blob_data, gz * p.cstep + y1 * p.w + x0);
+        afp v11 = buffer_ld1(image_blob_data, gz * p.cstep + y1 * p.w + x1);
+        afp v12 = buffer_ld1(image_blob_data, gz * p.cstep + y1 * p.w + x2);
+        afp v13 = buffer_ld1(image_blob_data, gz * p.cstep + y1 * p.w + x3);
+
+        afp v20 = buffer_ld1(image_blob_data, gz * p.cstep + y2 * p.w + x0);
+        afp v21 = buffer_ld1(image_blob_data, gz * p.cstep + y2 * p.w + x1);
+        afp v22 = buffer_ld1(image_blob_data, gz * p.cstep + y2 * p.w + x2);
+        afp v23 = buffer_ld1(image_blob_data, gz * p.cstep + y2 * p.w + x3);
+
+        afp v30 = buffer_ld1(image_blob_data, gz * p.cstep + y3 * p.w + x0);
+        afp v31 = buffer_ld1(image_blob_data, gz * p.cstep + y3 * p.w + x1);
+        afp v32 = buffer_ld1(image_blob_data, gz * p.cstep + y3 * p.w + x2);
+        afp v33 = buffer_ld1(image_blob_data, gz * p.cstep + y3 * p.w + x3);
+
+        afpvec4 w0 = buffer_ld4(filter_blob_data, gy * p.w + gx);
+        afpvec4 w1 = buffer_ld4(filter_blob_data, p.filter_cstep + gy * p.w + gx);
+        afpvec4 w2 = buffer_ld4(filter_blob_data, 2 * p.filter_cstep + gy * p.w + gx);
+        afpvec4 w3 = buffer_ld4(filter_blob_data, 3 * p.filter_cstep + gy * p.w + gx);
+
+        afp TL = v00 * w0[0] + v01 * w0[1] + v10 * w1[0] + v11 * w1[1];
+        afp TR = v02 * w0[2] + v03 * w0[3] + v12 * w1[2] + v13 * w1[3];
+        afp BL = v20 * w2[0] + v21 * w2[1] + v30 * w3[0] + v31 * w3[1];
+        afp BR = v22 * w2[2] + v23 * w2[3] + v32 * w3[2] + v33 * w3[3];
+
+        afp T = TL * (afp(1.f) - alpha) + TR * alpha;
+        afp B = BL * (afp(1.f) - alpha) + BR * alpha;
+        v = T * (afp(1.f) - beta) + B * beta;
+    }
+
+    const int gi = gz * p.cstep + gy * p.w + gx;
+
+    buffer_st1(top_blob_data, gi, v);
+}
