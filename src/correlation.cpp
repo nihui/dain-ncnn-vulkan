@@ -41,9 +41,15 @@ int Correlation::create_pipeline(const Option& opt)
 
     // pack1
     {
-        // TODO static
-        std::vector<uint32_t> spirv;
-        compile_spirv_module(correlation_comp_data, sizeof(correlation_comp_data), opt, spirv);
+        static std::vector<uint32_t> spirv;
+        static ncnn::Mutex lock;
+        {
+            ncnn::MutexLockGuard guard(lock);
+            if (spirv.empty())
+            {
+                compile_spirv_module(correlation_comp_data, sizeof(correlation_comp_data), opt, spirv);
+            }
+        }
 
         pipeline_correlation = new Pipeline(vkdev);
         pipeline_correlation->set_optimal_local_size_xyz();
@@ -52,9 +58,15 @@ int Correlation::create_pipeline(const Option& opt)
 
     // pack4to1
     {
-        // TODO static
-        std::vector<uint32_t> spirv;
-        compile_spirv_module(correlation_pack4to1_comp_data, sizeof(correlation_pack4to1_comp_data), opt, spirv);
+        static std::vector<uint32_t> spirv;
+        static ncnn::Mutex lock;
+        {
+            ncnn::MutexLockGuard guard(lock);
+            if (spirv.empty())
+            {
+                compile_spirv_module(correlation_pack4to1_comp_data, sizeof(correlation_pack4to1_comp_data), opt, spirv);
+            }
+        }
 
         pipeline_correlation_pack4to1 = new Pipeline(vkdev);
         pipeline_correlation_pack4to1->set_optimal_local_size_xyz();

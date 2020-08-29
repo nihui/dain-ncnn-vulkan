@@ -87,6 +87,7 @@ static std::vector<int> parse_optarg_int_array(const char* optarg)
 #include "cpu.h"
 #include "gpu.h"
 #include "platform.h"
+#include "benchmark.h"
 
 #include "dain.h"
 
@@ -214,7 +215,11 @@ int main(int argc, char** argv)
 
         dain->load();
 
+        double start = ncnn::get_current_time();
         dain->process(in0image, in1image, outimage);
+        double end = ncnn::get_current_time();
+
+        fprintf(stderr, "%f\n", end - start);
 
         delete dain;
     }

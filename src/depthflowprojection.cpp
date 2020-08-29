@@ -23,9 +23,15 @@ int DepthFlowProjection::create_pipeline(const Option& opt)
 
     // pack1
     {
-        // TODO static
-        std::vector<uint32_t> spirv;
-        compile_spirv_module(depthflowprojection_comp_data, sizeof(depthflowprojection_comp_data), opt, spirv);
+        static std::vector<uint32_t> spirv;
+        static ncnn::Mutex lock;
+        {
+            ncnn::MutexLockGuard guard(lock);
+            if (spirv.empty())
+            {
+                compile_spirv_module(depthflowprojection_comp_data, sizeof(depthflowprojection_comp_data), opt, spirv);
+            }
+        }
 
         pipeline_depthflowprojection = new Pipeline(vkdev);
         pipeline_depthflowprojection->set_optimal_local_size_xyz(8, 8, 1);
@@ -34,9 +40,15 @@ int DepthFlowProjection::create_pipeline(const Option& opt)
 
     // pack1
     {
-        // TODO static
-        std::vector<uint32_t> spirv;
-        compile_spirv_module(depthflowprojection_fillhole_comp_data, sizeof(depthflowprojection_fillhole_comp_data), opt, spirv);
+        static std::vector<uint32_t> spirv;
+        static ncnn::Mutex lock;
+        {
+            ncnn::MutexLockGuard guard(lock);
+            if (spirv.empty())
+            {
+                compile_spirv_module(depthflowprojection_fillhole_comp_data, sizeof(depthflowprojection_fillhole_comp_data), opt, spirv);
+            }
+        }
 
         pipeline_depthflowprojection_fillhole = new Pipeline(vkdev);
         pipeline_depthflowprojection_fillhole->set_optimal_local_size_xyz(8, 8, 1);

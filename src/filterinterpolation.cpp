@@ -21,9 +21,15 @@ int FilterInterpolation::create_pipeline(const Option& opt)
 
     // pack1
     {
-        // TODO static
-        std::vector<uint32_t> spirv;
-        compile_spirv_module(filterinterpolation_comp_data, sizeof(filterinterpolation_comp_data), opt, spirv);
+        static std::vector<uint32_t> spirv;
+        static ncnn::Mutex lock;
+        {
+            ncnn::MutexLockGuard guard(lock);
+            if (spirv.empty())
+            {
+                compile_spirv_module(filterinterpolation_comp_data, sizeof(filterinterpolation_comp_data), opt, spirv);
+            }
+        }
 
         pipeline_filterinterpolation = new Pipeline(vkdev);
         pipeline_filterinterpolation->set_optimal_local_size_xyz();
@@ -32,9 +38,15 @@ int FilterInterpolation::create_pipeline(const Option& opt)
 
     // pack4
     {
-        // TODO static
-        std::vector<uint32_t> spirv;
-        compile_spirv_module(filterinterpolation_pack4_comp_data, sizeof(filterinterpolation_pack4_comp_data), opt, spirv);
+        static std::vector<uint32_t> spirv;
+        static ncnn::Mutex lock;
+        {
+            ncnn::MutexLockGuard guard(lock);
+            if (spirv.empty())
+            {
+                compile_spirv_module(filterinterpolation_pack4_comp_data, sizeof(filterinterpolation_pack4_comp_data), opt, spirv);
+            }
+        }
 
         pipeline_filterinterpolation_pack4 = new Pipeline(vkdev);
         pipeline_filterinterpolation_pack4->set_optimal_local_size_xyz();

@@ -21,9 +21,15 @@ int OpticalFlowWarp::create_pipeline(const Option& opt)
 
     // pack1
     {
-        // TODO static
-        std::vector<uint32_t> spirv;
-        compile_spirv_module(opticalflowwarp_comp_data, sizeof(opticalflowwarp_comp_data), opt, spirv);
+        static std::vector<uint32_t> spirv;
+        static ncnn::Mutex lock;
+        {
+            ncnn::MutexLockGuard guard(lock);
+            if (spirv.empty())
+            {
+                compile_spirv_module(opticalflowwarp_comp_data, sizeof(opticalflowwarp_comp_data), opt, spirv);
+            }
+        }
 
         pipeline_opticalflowwarp = new Pipeline(vkdev);
         pipeline_opticalflowwarp->set_optimal_local_size_xyz();
@@ -32,9 +38,15 @@ int OpticalFlowWarp::create_pipeline(const Option& opt)
 
     // pack4
     {
-        // TODO static
-        std::vector<uint32_t> spirv;
-        compile_spirv_module(opticalflowwarp_pack4_comp_data, sizeof(opticalflowwarp_pack4_comp_data), opt, spirv);
+        static std::vector<uint32_t> spirv;
+        static ncnn::Mutex lock;
+        {
+            ncnn::MutexLockGuard guard(lock);
+            if (spirv.empty())
+            {
+                compile_spirv_module(opticalflowwarp_pack4_comp_data, sizeof(opticalflowwarp_pack4_comp_data), opt, spirv);
+            }
+        }
 
         pipeline_opticalflowwarp_pack4 = new Pipeline(vkdev);
         pipeline_opticalflowwarp_pack4->set_optimal_local_size_xyz();

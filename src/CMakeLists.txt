@@ -60,6 +60,8 @@ endif()
 
 find_package(ncnn)
 
+ncnn_add_shader(dain_preproc.comp)
+ncnn_add_shader(dain_postproc.comp)
 ncnn_add_shader(correlation.comp)
 ncnn_add_shader(correlation_pack4to1.comp)
 ncnn_add_shader(depthflowprojection.comp)

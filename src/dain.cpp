@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <vector>
 
+#include "dain_preproc.comp.hex.h"
+#include "dain_postproc.comp.hex.h"
+
 #include "dain_ops.h"
 
 DEFINE_LAYER_CREATOR(Correlation)
@@ -14,11 +17,20 @@ DEFINE_LAYER_CREATOR(FilterInterpolation)
 
 DAIN::DAIN()
 {
+    prepadding = 16;
+
     vkdev = ncnn::get_gpu_device(0);
+    dain_preproc = 0;
+    dain_postproc = 0;
 }
 
 DAIN::~DAIN()
 {
+    // cleanup preprocess and postprocess pipeline
+    {
+        delete dain_preproc;
+        delete dain_postproc;
+    }
 }
 
 int DAIN::load()
@@ -28,6 +40,7 @@ int DAIN::load()
     opt.use_fp16_packed = true;
     opt.use_fp16_storage = true;
     opt.use_fp16_arithmetic = true;
+    opt.use_int8_storage = true;
 
     depthnet.opt = opt;
     flownet.opt = opt;
@@ -57,6 +70,36 @@ int DAIN::load()
     interpolation.load_param("interpolation.param");
     interpolation.load_model("interpolation.bin");
 
+    // initialize preprocess and postprocess pipeline
+    {
+        std::vector<ncnn::vk_specialization_type> specializations(1);
+#if _WIN32
+        specializations[0].i = 1;
+#else
+        specializations[0].i = 0;
+#endif
+
+        {
+            // TODO static
+            std::vector<uint32_t> spirv;
+            compile_spirv_module(dain_preproc_comp_data, sizeof(dain_preproc_comp_data), opt, spirv);
+
+            dain_preproc = new ncnn::Pipeline(vkdev);
+            dain_preproc->set_optimal_local_size_xyz(8, 8, 3);
+            dain_preproc->create(spirv.data(), spirv.size() * 4, specializations);
+        }
+
+        {
+            // TODO static
+            std::vector<uint32_t> spirv;
+            compile_spirv_module(dain_postproc_comp_data, sizeof(dain_postproc_comp_data), opt, spirv);
+
+            dain_postproc = new ncnn::Pipeline(vkdev);
+            dain_postproc->set_optimal_local_size_xyz(8, 8, 3);
+            dain_postproc->create(spirv.data(), spirv.size() * 4, specializations);
+        }
+    }
+
     return 0;
 }
 
@@ -66,7 +109,9 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
     const unsigned char* pixel1data = (const unsigned char*)in1image.data;
     const int w = in0image.w;
     const int h = in0image.h;
-    const int channels = in0image.elempack;
+    const int channels = 3;//in0image.elempack;
+
+//     fprintf(stderr, "%d x %d\n", w, h);
 
     ncnn::VkAllocator* blob_vkallocator = vkdev->acquire_blob_allocator();
     ncnn::VkAllocator* staging_vkallocator = vkdev->acquire_staging_allocator();
@@ -76,22 +121,40 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
     opt.workspace_vkallocator = blob_vkallocator;
     opt.staging_vkallocator = staging_vkallocator;
 
+    // pad to 64n+pad+pad
+    int w_padded = (w + 31) / 32 * 32 + prepadding + prepadding;
+    int h_padded = (h + 31) / 32 * 32 + prepadding + prepadding;
+
+    const size_t in_out_tile_elemsize = opt.use_fp16_storage ? 2u : 4u;
+
     {
-        // pad to 32n+32
-        int w_padded = (w + 31) / 32 * 32 + 32 - w;
-        int h_padded = (h + 31) / 32 * 32 + 32 - h;
-
-        ncnn::Mat in0_origin = ncnn::Mat::from_pixels(pixel0data, ncnn::Mat::PIXEL_RGB2BGR, w, h);
-        ncnn::Mat in1_origin = ncnn::Mat::from_pixels(pixel1data, ncnn::Mat::PIXEL_RGB2BGR, w, h);
-
-        const float norm_vals[3] = {1/255.f, 1/255.f, 1/255.f};
-        in0_origin.substract_mean_normalize(0, norm_vals);
-        in1_origin.substract_mean_normalize(0, norm_vals);
-
         ncnn::Mat in0;
         ncnn::Mat in1;
-        ncnn::copy_make_border(in0_origin, in0, h_padded/2, h_padded - h_padded/2, w_padded/2, w_padded - w_padded/2, ncnn::BORDER_REPLICATE, 0.f);
-        ncnn::copy_make_border(in1_origin, in1, h_padded/2, h_padded - h_padded/2, w_padded/2, w_padded - w_padded/2, ncnn::BORDER_REPLICATE, 0.f);
+        if (opt.use_fp16_storage && opt.use_int8_storage)
+        {
+            in0 = ncnn::Mat(w, h, (unsigned char*)pixel0data, (size_t)channels, 1);
+            in1 = ncnn::Mat(w, h, (unsigned char*)pixel1data, (size_t)channels, 1);
+        }
+        else
+        {
+#if _WIN32
+            in0 = ncnn::Mat::from_pixels(pixel0data, ncnn::Mat::PIXEL_BGR, w, h);
+            in1 = ncnn::Mat::from_pixels(pixel1data, ncnn::Mat::PIXEL_BGR, w, h);
+#else
+            in0 = ncnn::Mat::from_pixels(pixel0data, ncnn::Mat::PIXEL_RGB2BGR, w, h);
+            in1 = ncnn::Mat::from_pixels(pixel1data, ncnn::Mat::PIXEL_RGB2BGR, w, h);
+#endif
+        }
+
+        ncnn::VkMat out_gpu;
+        if (opt.use_fp16_storage && opt.use_int8_storage)
+        {
+            out_gpu.create(w, h, (size_t)channels, 1, blob_vkallocator);
+        }
+        else
+        {
+            out_gpu.create(w, h, channels, (size_t)4u, 1, blob_vkallocator);
+        }
 
         ncnn::VkCompute cmd(vkdev);
 
@@ -99,8 +162,50 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
         ncnn::VkMat in0_gpu;
         ncnn::VkMat in1_gpu;
         {
-            cmd.record_upload(in0, in0_gpu, opt);
-            cmd.record_upload(in1, in1_gpu, opt);
+            cmd.record_clone(in0, in0_gpu, opt);
+            cmd.record_clone(in1, in1_gpu, opt);
+        }
+
+        // preproc
+        ncnn::VkMat in0_gpu_padded;
+        ncnn::VkMat in1_gpu_padded;
+        {
+            in0_gpu_padded.create(w_padded, h_padded, 3, in_out_tile_elemsize, 1, blob_vkallocator);
+
+            std::vector<ncnn::VkMat> bindings(2);
+            bindings[0] = in0_gpu;
+            bindings[1] = in0_gpu_padded;
+
+            std::vector<ncnn::vk_constant_type> constants(8);
+            constants[0].i = in0_gpu.w;
+            constants[1].i = in0_gpu.h;
+            constants[2].i = in0_gpu.cstep;
+            constants[3].i = in0_gpu_padded.w;
+            constants[4].i = in0_gpu_padded.h;
+            constants[5].i = in0_gpu_padded.cstep;
+            constants[6].i = prepadding + (w_padded - w) / 2;
+            constants[7].i = prepadding + (h_padded - h) / 2;
+
+            cmd.record_pipeline(dain_preproc, bindings, constants, in0_gpu_padded);
+        }
+        {
+            in1_gpu_padded.create(w_padded, h_padded, 3, in_out_tile_elemsize, 1, blob_vkallocator);
+
+            std::vector<ncnn::VkMat> bindings(2);
+            bindings[0] = in1_gpu;
+            bindings[1] = in1_gpu_padded;
+
+            std::vector<ncnn::vk_constant_type> constants(8);
+            constants[0].i = in1_gpu.w;
+            constants[1].i = in1_gpu.h;
+            constants[2].i = in1_gpu.cstep;
+            constants[3].i = in1_gpu_padded.w;
+            constants[4].i = in1_gpu_padded.h;
+            constants[5].i = in1_gpu_padded.cstep;
+            constants[6].i = prepadding + (w_padded - w) / 2;
+            constants[7].i = prepadding + (h_padded - h) / 2;
+
+            cmd.record_pipeline(dain_preproc, bindings, constants, in1_gpu_padded);
         }
 
         // depthnet
@@ -112,7 +217,7 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
             ex.set_workspace_vkallocator(blob_vkallocator);
             ex.set_staging_vkallocator(staging_vkallocator);
 
-            ex.input("input", in0_gpu);
+            ex.input("input", in0_gpu_padded);
             ex.extract("depth", depth0, cmd);
         }
         {
@@ -121,7 +226,7 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
             ex.set_workspace_vkallocator(blob_vkallocator);
             ex.set_staging_vkallocator(staging_vkallocator);
 
-            ex.input("input", in1_gpu);
+            ex.input("input", in1_gpu_padded);
             ex.extract("depth", depth1, cmd);
         }
 
@@ -134,8 +239,8 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
             ex.set_workspace_vkallocator(blob_vkallocator);
             ex.set_staging_vkallocator(staging_vkallocator);
 
-            ex.input("input0", in0);
-            ex.input("input1", in1);
+            ex.input("input0", in0_gpu_padded);
+            ex.input("input1", in1_gpu_padded);
             ex.extract("flow", flow0, cmd);
         }
         {
@@ -144,8 +249,8 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
             ex.set_workspace_vkallocator(blob_vkallocator);
             ex.set_staging_vkallocator(staging_vkallocator);
 
-            ex.input("input0", in1);
-            ex.input("input1", in0);
+            ex.input("input0", in1_gpu_padded);
+            ex.input("input1", in0_gpu_padded);
             ex.extract("flow", flow1, cmd);
         }
 
@@ -158,7 +263,7 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
             ex.set_workspace_vkallocator(blob_vkallocator);
             ex.set_staging_vkallocator(staging_vkallocator);
 
-            ex.input("input", in0);
+            ex.input("input", in0_gpu_padded);
             ex.extract("ctx", ctx0, cmd);
         }
         {
@@ -167,7 +272,7 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
             ex.set_workspace_vkallocator(blob_vkallocator);
             ex.set_staging_vkallocator(staging_vkallocator);
 
-            ex.input("input", in1);
+            ex.input("input", in1_gpu_padded);
             ex.extract("ctx", ctx1, cmd);
         }
 
@@ -177,15 +282,15 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
         flow0_w[0] = 0.5f;
         flow1_w[0] = 0.5f;
 
-        ncnn::VkMat out_padded_gpu;
+        ncnn::VkMat out_gpu_padded;
         {
             ncnn::Extractor ex = interpolation.create_extractor();
             ex.set_blob_vkallocator(blob_vkallocator);
             ex.set_workspace_vkallocator(blob_vkallocator);
             ex.set_staging_vkallocator(staging_vkallocator);
 
-            ex.input("input0", in0);
-            ex.input("input1", in1);
+            ex.input("input0", in0_gpu_padded);
+            ex.input("input1", in1_gpu_padded);
             ex.input("depth0", depth0);
             ex.input("depth1", depth1);
             ex.input("flow0", flow0);
@@ -194,25 +299,50 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
             ex.input("flow1_w", flow1_w);
             ex.input("ctx0", ctx0);
             ex.input("ctx1", ctx1);
-            ex.extract("output_rectified", out_padded_gpu, cmd);
+            ex.extract("output_rectified", out_gpu_padded, cmd);
+        }
+
+        // postproc
+        {
+            std::vector<ncnn::VkMat> bindings(2);
+            bindings[0] = out_gpu_padded;
+            bindings[1] = out_gpu;
+
+            std::vector<ncnn::vk_constant_type> constants(8);
+            constants[0].i = out_gpu_padded.w;
+            constants[1].i = out_gpu_padded.h;
+            constants[2].i = out_gpu_padded.cstep;
+            constants[3].i = out_gpu.w;
+            constants[4].i = out_gpu.h;
+            constants[5].i = out_gpu.cstep;
+            constants[6].i = prepadding + (w_padded - w) / 2;
+            constants[7].i = prepadding + (h_padded - h) / 2;
+
+            cmd.record_pipeline(dain_postproc, bindings, constants, out_gpu);
         }
 
         // download
-        ncnn::Mat out_padded;
         {
-            cmd.record_download(out_padded_gpu, out_padded, opt);
+            ncnn::Mat out;
+
+            if (opt.use_fp16_storage && opt.use_int8_storage)
+            {
+                out = ncnn::Mat(w, h, (unsigned char*)outimage.data, (size_t)channels, 1);
+            }
+
+            cmd.record_clone(out_gpu, out, opt);
+
+            cmd.submit_and_wait();
+
+            if (!(opt.use_fp16_storage && opt.use_int8_storage))
+            {
+#if _WIN32
+                out.to_pixels((unsigned char*)outimage.data, ncnn::Mat::PIXEL_BGR);
+#else
+                out.to_pixels((unsigned char*)outimage.data, ncnn::Mat::PIXEL_BGR2RGB);
+#endif
+            }
         }
-
-        cmd.submit_and_wait();
-
-        // TODO +0.5 before clip
-        const float denorm_vals[3] = {255.f, 255.f, 255.f};
-        out_padded.substract_mean_normalize(0, denorm_vals);
-
-        ncnn::Mat out;
-        ncnn::copy_cut_border(out_padded, out, h_padded/2, h_padded - h_padded/2, w_padded/2, w_padded - w_padded/2);
-
-        out.to_pixels((unsigned char*)outimage.data, ncnn::Mat::PIXEL_BGR2RGB);
     }
 
     vkdev->reclaim_blob_allocator(blob_vkallocator);
