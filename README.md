@@ -35,7 +35,7 @@ Input two frame images, output one interpolated frame image.
 * ~~interpolate rate control~~
 * ~~port all custom layers to vulkan~~
 * ~~port pre-process and post-process to vulkan~~
-* tiled process for reducing VRAM
+* ~~tiled process for reducing VRAM~~
 * github action ci
 * test-time sptial augmentation aka TTA-s
 * test-time temporal augmentation aka TTA-t

@@ -31,6 +31,8 @@ layout (push_constant) uniform parameter
 
     int pad_x;
     int pad_y;
+
+    int crop_x;
 } p;
 
 void main()
@@ -42,7 +44,7 @@ void main()
     if (gx >= p.outw || gy >= p.outh || gz >= 3)
         return;
 
-    int x = gx - p.pad_x;
+    int x = gx - p.pad_x + p.crop_x;
     int y = gy - p.pad_y;
 
     // border replicate

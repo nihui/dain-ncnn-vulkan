@@ -31,6 +31,8 @@ layout (push_constant) uniform parameter
 
     int pad_x;
     int pad_y;
+
+    int crop_x;
 } p;
 
 void main()
@@ -53,7 +55,7 @@ void main()
     v = v * denorm_val + clip_eps;
 
 #if NCNN_int8_storage
-    int v_offset = gy * p.outw + gx;
+    int v_offset = gy * p.outw + gx + p.crop_x;
 
     uint v32 = clamp(uint(floor(v)), 0, 255);
 
@@ -62,7 +64,7 @@ void main()
     else
         top_blob_data[v_offset * 3 + 2 - gz] = uint8_t(v32);
 #else
-    int v_offset = gz * p.outcstep + gy * p.outw + gx;
+    int v_offset = gz * p.outcstep + gy * p.outw + gx + p.crop_x;
 
     top_blob_data[v_offset] = v;
 #endif

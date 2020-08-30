@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <vector>
+#include "benchmark.h"
 
 #include "dain_preproc.comp.hex.h"
 #include "dain_postproc.comp.hex.h"
@@ -17,7 +18,7 @@ DEFINE_LAYER_CREATOR(FilterInterpolation)
 
 DAIN::DAIN()
 {
-    prepadding = 16;
+    prepadding = 32;
 
     vkdev = ncnn::get_gpu_device(0);
     dain_preproc = 0;
@@ -111,6 +112,9 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
     const int h = in0image.h;
     const int channels = 3;//in0image.elempack;
 
+    const int TILE_SIZE_X = 256;
+    const int TILE_SIZE_Y = 256;
+
 //     fprintf(stderr, "%d x %d\n", w, h);
 
     ncnn::VkAllocator* blob_vkallocator = vkdev->acquire_blob_allocator();
@@ -121,39 +125,42 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
     opt.workspace_vkallocator = blob_vkallocator;
     opt.staging_vkallocator = staging_vkallocator;
 
-    // pad to 64n+pad+pad
-    int w_padded = (w + 31) / 32 * 32 + prepadding + prepadding;
-    int h_padded = (h + 31) / 32 * 32 + prepadding + prepadding;
+    // pad to 32n
+    int w_padded = (w + 31) / 32 * 32;
+    int h_padded = (h + 31) / 32 * 32;
+
+    // each tile 100x100
+    const int xtiles = (w_padded + TILE_SIZE_X - 1) / TILE_SIZE_X;
+    const int ytiles = (h_padded + TILE_SIZE_Y - 1) / TILE_SIZE_Y;
+
+    fprintf(stderr, "tiles %d %d\n", xtiles, ytiles);
 
     const size_t in_out_tile_elemsize = opt.use_fp16_storage ? 2u : 4u;
 
+    //#pragma omp parallel for num_threads(2)
+    for (int yi = 0; yi < ytiles; yi++)
     {
+        int in_tile_y0 = std::max(yi * TILE_SIZE_Y - prepadding, 0);
+        int in_tile_y1 = std::min((yi + 1) * TILE_SIZE_Y + prepadding, h);
+
+        fprintf(stderr, "in_tile_y0 %d %d\n", in_tile_y0, in_tile_y1);
+
         ncnn::Mat in0;
         ncnn::Mat in1;
         if (opt.use_fp16_storage && opt.use_int8_storage)
         {
-            in0 = ncnn::Mat(w, h, (unsigned char*)pixel0data, (size_t)channels, 1);
-            in1 = ncnn::Mat(w, h, (unsigned char*)pixel1data, (size_t)channels, 1);
+            in0 = ncnn::Mat(w, (in_tile_y1 - in_tile_y0), (unsigned char*)pixel0data + in_tile_y0 * w * channels, (size_t)channels, 1);
+            in1 = ncnn::Mat(w, (in_tile_y1 - in_tile_y0), (unsigned char*)pixel1data + in_tile_y0 * w * channels, (size_t)channels, 1);
         }
         else
         {
 #if _WIN32
-            in0 = ncnn::Mat::from_pixels(pixel0data, ncnn::Mat::PIXEL_BGR, w, h);
-            in1 = ncnn::Mat::from_pixels(pixel1data, ncnn::Mat::PIXEL_BGR, w, h);
+            in0 = ncnn::Mat::from_pixels(pixel0data + in_tile_y0 * w * channels, ncnn::Mat::PIXEL_BGR, w, (in_tile_y1 - in_tile_y0));
+            in1 = ncnn::Mat::from_pixels(pixel1data + in_tile_y0 * w * channels, ncnn::Mat::PIXEL_BGR, w, (in_tile_y1 - in_tile_y0));
 #else
-            in0 = ncnn::Mat::from_pixels(pixel0data, ncnn::Mat::PIXEL_RGB2BGR, w, h);
-            in1 = ncnn::Mat::from_pixels(pixel1data, ncnn::Mat::PIXEL_RGB2BGR, w, h);
+            in0 = ncnn::Mat::from_pixels(pixel0data + in_tile_y0 * w * channels, ncnn::Mat::PIXEL_RGB2BGR, w, (in_tile_y1 - in_tile_y0));
+            in1 = ncnn::Mat::from_pixels(pixel1data + in_tile_y0 * w * channels, ncnn::Mat::PIXEL_RGB2BGR, w, (in_tile_y1 - in_tile_y0));
 #endif
-        }
-
-        ncnn::VkMat out_gpu;
-        if (opt.use_fp16_storage && opt.use_int8_storage)
-        {
-            out_gpu.create(w, h, (size_t)channels, 1, blob_vkallocator);
-        }
-        else
-        {
-            out_gpu.create(w, h, channels, (size_t)4u, 1, blob_vkallocator);
         }
 
         ncnn::VkCompute cmd(vkdev);
@@ -166,159 +173,190 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
             cmd.record_clone(in1, in1_gpu, opt);
         }
 
-        // preproc
-        ncnn::VkMat in0_gpu_padded;
-        ncnn::VkMat in1_gpu_padded;
+        int out_tile_y0 = yi * TILE_SIZE_Y;
+        int out_tile_y1 = std::min((yi + 1) * TILE_SIZE_Y, h);
+
+        ncnn::VkMat out_gpu;
+        if (opt.use_fp16_storage && opt.use_int8_storage)
         {
-            in0_gpu_padded.create(w_padded, h_padded, 3, in_out_tile_elemsize, 1, blob_vkallocator);
-
-            std::vector<ncnn::VkMat> bindings(2);
-            bindings[0] = in0_gpu;
-            bindings[1] = in0_gpu_padded;
-
-            std::vector<ncnn::vk_constant_type> constants(8);
-            constants[0].i = in0_gpu.w;
-            constants[1].i = in0_gpu.h;
-            constants[2].i = in0_gpu.cstep;
-            constants[3].i = in0_gpu_padded.w;
-            constants[4].i = in0_gpu_padded.h;
-            constants[5].i = in0_gpu_padded.cstep;
-            constants[6].i = prepadding + (w_padded - w) / 2;
-            constants[7].i = prepadding + (h_padded - h) / 2;
-
-            cmd.record_pipeline(dain_preproc, bindings, constants, in0_gpu_padded);
+            out_gpu.create(w, (out_tile_y1 - out_tile_y0), (size_t)channels, 1, blob_vkallocator);
         }
+        else
         {
-            in1_gpu_padded.create(w_padded, h_padded, 3, in_out_tile_elemsize, 1, blob_vkallocator);
-
-            std::vector<ncnn::VkMat> bindings(2);
-            bindings[0] = in1_gpu;
-            bindings[1] = in1_gpu_padded;
-
-            std::vector<ncnn::vk_constant_type> constants(8);
-            constants[0].i = in1_gpu.w;
-            constants[1].i = in1_gpu.h;
-            constants[2].i = in1_gpu.cstep;
-            constants[3].i = in1_gpu_padded.w;
-            constants[4].i = in1_gpu_padded.h;
-            constants[5].i = in1_gpu_padded.cstep;
-            constants[6].i = prepadding + (w_padded - w) / 2;
-            constants[7].i = prepadding + (h_padded - h) / 2;
-
-            cmd.record_pipeline(dain_preproc, bindings, constants, in1_gpu_padded);
+            out_gpu.create(w, (out_tile_y1 - out_tile_y0), channels, (size_t)4u, 1, blob_vkallocator);
         }
 
-        // depthnet
-        ncnn::VkMat depth0;
-        ncnn::VkMat depth1;
+        for (int xi = 0; xi < xtiles; xi++)
         {
-            ncnn::Extractor ex = depthnet.create_extractor();
-            ex.set_blob_vkallocator(blob_vkallocator);
-            ex.set_workspace_vkallocator(blob_vkallocator);
-            ex.set_staging_vkallocator(staging_vkallocator);
+            // preproc
+            ncnn::VkMat in0_tile_gpu;
+            ncnn::VkMat in1_tile_gpu;
+            {
+                // crop tile
+                in0_tile_gpu.create(TILE_SIZE_X + prepadding * 2, TILE_SIZE_Y + prepadding * 2, 3, in_out_tile_elemsize, 1, blob_vkallocator);
 
-            ex.input("input", in0_gpu_padded);
-            ex.extract("depth", depth0, cmd);
-        }
-        {
-            ncnn::Extractor ex = depthnet.create_extractor();
-            ex.set_blob_vkallocator(blob_vkallocator);
-            ex.set_workspace_vkallocator(blob_vkallocator);
-            ex.set_staging_vkallocator(staging_vkallocator);
+                std::vector<ncnn::VkMat> bindings(2);
+                bindings[0] = in0_gpu;
+                bindings[1] = in0_tile_gpu;
 
-            ex.input("input", in1_gpu_padded);
-            ex.extract("depth", depth1, cmd);
-        }
+                std::vector<ncnn::vk_constant_type> constants(9);
+                constants[0].i = in0_gpu.w;
+                constants[1].i = in0_gpu.h;
+                constants[2].i = in0_gpu.cstep;
+                constants[3].i = in0_tile_gpu.w;
+                constants[4].i = in0_tile_gpu.h;
+                constants[5].i = in0_tile_gpu.cstep;
+                constants[6].i = prepadding;
+                constants[7].i = std::max(prepadding - yi * TILE_SIZE_Y, 0);
+                constants[8].i = xi * TILE_SIZE_X;
 
-        // flownet
-        ncnn::VkMat flow0;
-        ncnn::VkMat flow1;
-        {
-            ncnn::Extractor ex = flownet.create_extractor();
-            ex.set_blob_vkallocator(blob_vkallocator);
-            ex.set_workspace_vkallocator(blob_vkallocator);
-            ex.set_staging_vkallocator(staging_vkallocator);
+                cmd.record_pipeline(dain_preproc, bindings, constants, in0_tile_gpu);
+            }
+            {
+                // crop tile
+                in1_tile_gpu.create(TILE_SIZE_X + prepadding * 2, TILE_SIZE_Y + prepadding * 2, 3, in_out_tile_elemsize, 1, blob_vkallocator);
 
-            ex.input("input0", in0_gpu_padded);
-            ex.input("input1", in1_gpu_padded);
-            ex.extract("flow", flow0, cmd);
-        }
-        {
-            ncnn::Extractor ex = flownet.create_extractor();
-            ex.set_blob_vkallocator(blob_vkallocator);
-            ex.set_workspace_vkallocator(blob_vkallocator);
-            ex.set_staging_vkallocator(staging_vkallocator);
+                std::vector<ncnn::VkMat> bindings(2);
+                bindings[0] = in1_gpu;
+                bindings[1] = in1_tile_gpu;
 
-            ex.input("input0", in1_gpu_padded);
-            ex.input("input1", in0_gpu_padded);
-            ex.extract("flow", flow1, cmd);
-        }
+                std::vector<ncnn::vk_constant_type> constants(9);
+                constants[0].i = in1_gpu.w;
+                constants[1].i = in1_gpu.h;
+                constants[2].i = in1_gpu.cstep;
+                constants[3].i = in1_tile_gpu.w;
+                constants[4].i = in1_tile_gpu.h;
+                constants[5].i = in1_tile_gpu.cstep;
+                constants[6].i = prepadding;
+                constants[7].i = std::max(prepadding - yi * TILE_SIZE_Y, 0);
+                constants[8].i = xi * TILE_SIZE_X;
 
-        // ctxnet
-        ncnn::VkMat ctx0;
-        ncnn::VkMat ctx1;
-        {
-            ncnn::Extractor ex = ctxnet.create_extractor();
-            ex.set_blob_vkallocator(blob_vkallocator);
-            ex.set_workspace_vkallocator(blob_vkallocator);
-            ex.set_staging_vkallocator(staging_vkallocator);
+                cmd.record_pipeline(dain_preproc, bindings, constants, in1_tile_gpu);
+            }
 
-            ex.input("input", in0_gpu_padded);
-            ex.extract("ctx", ctx0, cmd);
-        }
-        {
-            ncnn::Extractor ex = ctxnet.create_extractor();
-            ex.set_blob_vkallocator(blob_vkallocator);
-            ex.set_workspace_vkallocator(blob_vkallocator);
-            ex.set_staging_vkallocator(staging_vkallocator);
+//             fprintf(stderr, "in0_tile_gpu %d %d\n", in0_tile_gpu.w, in0_tile_gpu.h);
 
-            ex.input("input", in1_gpu_padded);
-            ex.extract("ctx", ctx1, cmd);
-        }
+            // depthnet
+            ncnn::VkMat depth0;
+            ncnn::VkMat depth1;
+            {
+                ncnn::Extractor ex = depthnet.create_extractor();
+                ex.set_blob_vkallocator(blob_vkallocator);
+                ex.set_workspace_vkallocator(blob_vkallocator);
+                ex.set_staging_vkallocator(staging_vkallocator);
 
-        // interpolation
-        ncnn::Mat flow0_w(1);
-        ncnn::Mat flow1_w(1);
-        flow0_w[0] = 0.5f;
-        flow1_w[0] = 0.5f;
+                ex.input("input", in0_tile_gpu);
+                ex.extract("depth", depth0, cmd);
+            }
+            {
+                ncnn::Extractor ex = depthnet.create_extractor();
+                ex.set_blob_vkallocator(blob_vkallocator);
+                ex.set_workspace_vkallocator(blob_vkallocator);
+                ex.set_staging_vkallocator(staging_vkallocator);
 
-        ncnn::VkMat out_gpu_padded;
-        {
-            ncnn::Extractor ex = interpolation.create_extractor();
-            ex.set_blob_vkallocator(blob_vkallocator);
-            ex.set_workspace_vkallocator(blob_vkallocator);
-            ex.set_staging_vkallocator(staging_vkallocator);
+                ex.input("input", in1_tile_gpu);
+                ex.extract("depth", depth1, cmd);
+            }
 
-            ex.input("input0", in0_gpu_padded);
-            ex.input("input1", in1_gpu_padded);
-            ex.input("depth0", depth0);
-            ex.input("depth1", depth1);
-            ex.input("flow0", flow0);
-            ex.input("flow1", flow1);
-            ex.input("flow0_w", flow0_w);
-            ex.input("flow1_w", flow1_w);
-            ex.input("ctx0", ctx0);
-            ex.input("ctx1", ctx1);
-            ex.extract("output_rectified", out_gpu_padded, cmd);
-        }
+            // flownet
+            ncnn::VkMat flow0;
+            ncnn::VkMat flow1;
+            {
+                ncnn::Extractor ex = flownet.create_extractor();
+                ex.set_blob_vkallocator(blob_vkallocator);
+                ex.set_workspace_vkallocator(blob_vkallocator);
+                ex.set_staging_vkallocator(staging_vkallocator);
 
-        // postproc
-        {
-            std::vector<ncnn::VkMat> bindings(2);
-            bindings[0] = out_gpu_padded;
-            bindings[1] = out_gpu;
+                ex.input("input0", in0_tile_gpu);
+                ex.input("input1", in1_tile_gpu);
+                ex.extract("flow", flow0, cmd);
+            }
+            {
+                ncnn::Extractor ex = flownet.create_extractor();
+                ex.set_blob_vkallocator(blob_vkallocator);
+                ex.set_workspace_vkallocator(blob_vkallocator);
+                ex.set_staging_vkallocator(staging_vkallocator);
 
-            std::vector<ncnn::vk_constant_type> constants(8);
-            constants[0].i = out_gpu_padded.w;
-            constants[1].i = out_gpu_padded.h;
-            constants[2].i = out_gpu_padded.cstep;
-            constants[3].i = out_gpu.w;
-            constants[4].i = out_gpu.h;
-            constants[5].i = out_gpu.cstep;
-            constants[6].i = prepadding + (w_padded - w) / 2;
-            constants[7].i = prepadding + (h_padded - h) / 2;
+                ex.input("input0", in1_tile_gpu);
+                ex.input("input1", in0_tile_gpu);
+                ex.extract("flow", flow1, cmd);
+            }
 
-            cmd.record_pipeline(dain_postproc, bindings, constants, out_gpu);
+            // ctxnet
+            ncnn::VkMat ctx0;
+            ncnn::VkMat ctx1;
+            {
+                ncnn::Extractor ex = ctxnet.create_extractor();
+                ex.set_blob_vkallocator(blob_vkallocator);
+                ex.set_workspace_vkallocator(blob_vkallocator);
+                ex.set_staging_vkallocator(staging_vkallocator);
+
+                ex.input("input", in0_tile_gpu);
+                ex.extract("ctx", ctx0, cmd);
+            }
+            {
+                ncnn::Extractor ex = ctxnet.create_extractor();
+                ex.set_blob_vkallocator(blob_vkallocator);
+                ex.set_workspace_vkallocator(blob_vkallocator);
+                ex.set_staging_vkallocator(staging_vkallocator);
+
+                ex.input("input", in1_tile_gpu);
+                ex.extract("ctx", ctx1, cmd);
+            }
+
+            // interpolation
+            ncnn::Mat flow0_w(1);
+            ncnn::Mat flow1_w(1);
+            flow0_w[0] = 0.5f;
+            flow1_w[0] = 0.5f;
+
+            ncnn::VkMat out_gpu_padded;
+            {
+                ncnn::Extractor ex = interpolation.create_extractor();
+                ex.set_blob_vkallocator(blob_vkallocator);
+                ex.set_workspace_vkallocator(blob_vkallocator);
+                ex.set_staging_vkallocator(staging_vkallocator);
+
+                ex.input("input0", in0_tile_gpu);
+                ex.input("input1", in1_tile_gpu);
+                ex.input("depth0", depth0);
+                ex.input("depth1", depth1);
+                ex.input("flow0", flow0);
+                ex.input("flow1", flow1);
+                ex.input("flow0_w", flow0_w);
+                ex.input("flow1_w", flow1_w);
+                ex.input("ctx0", ctx0);
+                ex.input("ctx1", ctx1);
+                ex.extract("output_rectified", out_gpu_padded, cmd);
+            }
+
+            // postproc
+            {
+                std::vector<ncnn::VkMat> bindings(2);
+                bindings[0] = out_gpu_padded;
+                bindings[1] = out_gpu;
+
+                std::vector<ncnn::vk_constant_type> constants(9);
+                constants[0].i = out_gpu_padded.w;
+                constants[1].i = out_gpu_padded.h;
+                constants[2].i = out_gpu_padded.cstep;
+                constants[3].i = out_gpu.w;
+                constants[4].i = out_gpu.h;
+                constants[5].i = out_gpu.cstep;
+                constants[6].i = prepadding;
+                constants[7].i = prepadding;
+                constants[8].i = xi * TILE_SIZE_X;
+
+                ncnn::VkMat dispatcher;
+                dispatcher.w = std::min((xi + 1) * TILE_SIZE_X, w) - xi * TILE_SIZE_X;
+                dispatcher.h = out_gpu.h;
+                dispatcher.c = 3;
+
+                cmd.record_pipeline(dain_postproc, bindings, constants, dispatcher);
+            }
+
+            cmd.submit_and_wait();
+            cmd.reset();
         }
 
         // download
@@ -327,7 +365,7 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
 
             if (opt.use_fp16_storage && opt.use_int8_storage)
             {
-                out = ncnn::Mat(w, h, (unsigned char*)outimage.data, (size_t)channels, 1);
+                out = ncnn::Mat(out_gpu.w, out_gpu.h, (unsigned char*)outimage.data + out_tile_y0 * w * channels, (size_t)channels, 1);
             }
 
             cmd.record_clone(out_gpu, out, opt);
@@ -337,9 +375,9 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
             if (!(opt.use_fp16_storage && opt.use_int8_storage))
             {
 #if _WIN32
-                out.to_pixels((unsigned char*)outimage.data, ncnn::Mat::PIXEL_BGR);
+                out.to_pixels((unsigned char*)outimage.data + out_tile_y0 * w * channels, ncnn::Mat::PIXEL_BGR);
 #else
-                out.to_pixels((unsigned char*)outimage.data, ncnn::Mat::PIXEL_BGR2RGB);
+                out.to_pixels((unsigned char*)outimage.data + out_tile_y0 * w * channels, ncnn::Mat::PIXEL_BGR2RGB);
 #endif
             }
         }
