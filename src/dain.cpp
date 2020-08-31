@@ -18,6 +18,7 @@ DEFINE_LAYER_CREATOR(FilterInterpolation)
 
 DAIN::DAIN()
 {
+    tilesize = 256;
     prepadding = 32;
 
     vkdev = ncnn::get_gpu_device(0);
@@ -81,9 +82,15 @@ int DAIN::load()
 #endif
 
         {
-            // TODO static
-            std::vector<uint32_t> spirv;
-            compile_spirv_module(dain_preproc_comp_data, sizeof(dain_preproc_comp_data), opt, spirv);
+            static std::vector<uint32_t> spirv;
+            static ncnn::Mutex lock;
+            {
+                ncnn::MutexLockGuard guard(lock);
+                if (spirv.empty())
+                {
+                    compile_spirv_module(dain_preproc_comp_data, sizeof(dain_preproc_comp_data), opt, spirv);
+                }
+            }
 
             dain_preproc = new ncnn::Pipeline(vkdev);
             dain_preproc->set_optimal_local_size_xyz(8, 8, 3);
@@ -91,9 +98,15 @@ int DAIN::load()
         }
 
         {
-            // TODO static
-            std::vector<uint32_t> spirv;
-            compile_spirv_module(dain_postproc_comp_data, sizeof(dain_postproc_comp_data), opt, spirv);
+            static std::vector<uint32_t> spirv;
+            static ncnn::Mutex lock;
+            {
+                ncnn::MutexLockGuard guard(lock);
+                if (spirv.empty())
+                {
+                    compile_spirv_module(dain_postproc_comp_data, sizeof(dain_postproc_comp_data), opt, spirv);
+                }
+            }
 
             dain_postproc = new ncnn::Pipeline(vkdev);
             dain_postproc->set_optimal_local_size_xyz(8, 8, 3);
@@ -112,8 +125,8 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
     const int h = in0image.h;
     const int channels = 3;//in0image.elempack;
 
-    const int TILE_SIZE_X = 256;
-    const int TILE_SIZE_Y = 256;
+    const int TILE_SIZE_X = tilesize;
+    const int TILE_SIZE_Y = tilesize;
 
 //     fprintf(stderr, "%d x %d\n", w, h);
 
@@ -143,7 +156,7 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
         int in_tile_y0 = std::max(yi * TILE_SIZE_Y - prepadding, 0);
         int in_tile_y1 = std::min((yi + 1) * TILE_SIZE_Y + prepadding, h);
 
-        fprintf(stderr, "in_tile_y0 %d %d\n", in_tile_y0, in_tile_y1);
+//         fprintf(stderr, "in_tile_y0 %d %d\n", in_tile_y0, in_tile_y1);
 
         ncnn::Mat in0;
         ncnn::Mat in1;
@@ -171,6 +184,12 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
         {
             cmd.record_clone(in0, in0_gpu, opt);
             cmd.record_clone(in1, in1_gpu, opt);
+
+            if (xtiles > 1)
+            {
+                cmd.submit_and_wait();
+                cmd.reset();
+            }
         }
 
         int out_tile_y0 = yi * TILE_SIZE_Y;
@@ -193,7 +212,12 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
             ncnn::VkMat in1_tile_gpu;
             {
                 // crop tile
-                in0_tile_gpu.create(TILE_SIZE_X + prepadding * 2, TILE_SIZE_Y + prepadding * 2, 3, in_out_tile_elemsize, 1, blob_vkallocator);
+                int tile_x0 = xi * TILE_SIZE_X - prepadding;
+                int tile_x1 = std::min((xi + 1) * TILE_SIZE_X, w_padded) + prepadding;
+                int tile_y0 = yi * TILE_SIZE_Y - prepadding;
+                int tile_y1 = std::min((yi + 1) * TILE_SIZE_Y, h_padded) + prepadding;
+
+                in0_tile_gpu.create(tile_x1 - tile_x0, tile_y1 - tile_y0, 3, in_out_tile_elemsize, 1, blob_vkallocator);
 
                 std::vector<ncnn::VkMat> bindings(2);
                 bindings[0] = in0_gpu;
@@ -214,7 +238,12 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
             }
             {
                 // crop tile
-                in1_tile_gpu.create(TILE_SIZE_X + prepadding * 2, TILE_SIZE_Y + prepadding * 2, 3, in_out_tile_elemsize, 1, blob_vkallocator);
+                int tile_x0 = xi * TILE_SIZE_X - prepadding;
+                int tile_x1 = std::min((xi + 1) * TILE_SIZE_X, w_padded) + prepadding;
+                int tile_y0 = yi * TILE_SIZE_Y - prepadding;
+                int tile_y1 = std::min((yi + 1) * TILE_SIZE_Y, h_padded) + prepadding;
+
+                in1_tile_gpu.create(tile_x1 - tile_x0, tile_y1 - tile_y0, 3, in_out_tile_elemsize, 1, blob_vkallocator);
 
                 std::vector<ncnn::VkMat> bindings(2);
                 bindings[0] = in1_gpu;
@@ -355,8 +384,13 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
                 cmd.record_pipeline(dain_postproc, bindings, constants, dispatcher);
             }
 
-            cmd.submit_and_wait();
-            cmd.reset();
+            if (xtiles > 1)
+            {
+                cmd.submit_and_wait();
+                cmd.reset();
+            }
+
+            fprintf(stderr, "%.2f%%\n", (float)(yi * xtiles + xi) / (ytiles * xtiles) * 100);
         }
 
         // download

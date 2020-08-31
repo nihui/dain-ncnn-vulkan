@@ -20,6 +20,7 @@ public:
 
 public:
     // dain parameters
+    int tilesize;
     int prepadding;
 
 private:
