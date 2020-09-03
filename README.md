@@ -36,7 +36,7 @@ Input two frame images, output one interpolated frame image.
 * ~~port all custom layers to vulkan~~
 * ~~port pre-process and post-process to vulkan~~
 * ~~tiled process for reducing VRAM~~
-* github action ci
+* ~~github action ci~~
 * test-time sptial augmentation aka TTA-s
 * test-time temporal augmentation aka TTA-t
 * load images from directory
@@ -52,3 +52,4 @@ Input two frame images, output one interpolated frame image.
 
 - https://github.com/Tencent/ncnn for fast neural network inference on ALL PLATFORMS
 - https://github.com/nothings/stb for decoding and encoding image on Linux / MacOS
+- https://github.com/tronkko/dirent for listing files in directory on Windows
