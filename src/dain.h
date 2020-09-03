@@ -11,12 +11,12 @@
 class DAIN
 {
 public:
-    DAIN();
+    DAIN(int gpuid);
     ~DAIN();
 
     int load();
 
-    int process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Mat& outimage) const;
+    int process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float timestep, ncnn::Mat& outimage) const;
 
 public:
     // dain parameters

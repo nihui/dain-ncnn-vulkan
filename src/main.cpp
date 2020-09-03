@@ -105,6 +105,9 @@ static void print_usage()
     fprintf(stderr, "  -0 input0-path       input image0 path (jpg/png)\n");
     fprintf(stderr, "  -1 input1-path       input image1 path (jpg/png)\n");
     fprintf(stderr, "  -o output-path       output image path (jpg/png)\n");
+    fprintf(stderr, "  -s time-step         time step (0~1, default=0.5)\n");
+    fprintf(stderr, "  -t tile-size         tile size (>=128, default=256)\n");
+    fprintf(stderr, "  -g gpu-id            gpu device to use (default=0)\n");
 }
 
 void load(const path_t& imagepath, ncnn::Mat& image)
@@ -156,11 +159,14 @@ int main(int argc, char** argv)
     path_t input0path;
     path_t input1path;
     path_t outputpath;
+    float timestep = 0.5f;
+    int tilesize = 256;
+    int gpuid = 0;
 
 #if _WIN32
     setlocale(LC_ALL, "");
     wchar_t opt;
-    while ((opt = getopt(argc, argv, L"0:1:o:h")) != (wchar_t)-1)
+    while ((opt = getopt(argc, argv, L"0:1:o:s:t:g:h")) != (wchar_t)-1)
     {
         switch (opt)
         {
@@ -173,6 +179,15 @@ int main(int argc, char** argv)
         case L'o':
             outputpath = optarg;
             break;
+        case L's':
+            timestep = _wtof(optarg);
+            break;
+        case L't':
+            tilesize = _wtoi(optarg);
+            break;
+        case L'g':
+            gpuid = _wtoi(optarg);
+            break;
         case L'h':
         default:
             print_usage();
@@ -181,7 +196,7 @@ int main(int argc, char** argv)
     }
 #else // _WIN32
     int opt;
-    while ((opt = getopt(argc, argv, "0:1:o:h")) != -1)
+    while ((opt = getopt(argc, argv, "0:1:o:s:t:g:h")) != -1)
     {
         switch (opt)
         {
@@ -194,6 +209,15 @@ int main(int argc, char** argv)
         case 'o':
             outputpath = optarg;
             break;
+        case 's':
+            timestep = atof(optarg);
+            break;
+        case 't':
+            tilesize = atoi(optarg);
+            break;
+        case 'g':
+            gpuid = atoi(optarg);
+            break;
         case 'h':
         default:
             print_usage();
@@ -205,6 +229,18 @@ int main(int argc, char** argv)
     if (input0path.empty() || input1path.empty() || outputpath.empty())
     {
         print_usage();
+        return -1;
+    }
+
+    if (timestep <= 0.f || timestep >= 1.f)
+    {
+        fprintf(stderr, "invalid timestep argument, must be 0~1\n");
+        return -1;
+    }
+
+    if (tilesize < 128 || tilesize % 32 != 0)
+    {
+        fprintf(stderr, "invalid tilesize argument, must be >= 128, must be multiple of 32\n");
         return -1;
     }
 
@@ -227,13 +263,23 @@ int main(int argc, char** argv)
 
     ncnn::create_gpu_instance();
 
+    int gpu_count = ncnn::get_gpu_count();
+    if (gpuid < 0 || gpuid >= gpu_count)
     {
-        DAIN* dain = new DAIN();
+        fprintf(stderr, "invalid gpu device\n");
+
+        ncnn::destroy_gpu_instance();
+        return -1;
+    }
+
+    {
+        DAIN* dain = new DAIN(gpuid);
+        dain->tilesize = tilesize;
 
         dain->load();
 
         double start = ncnn::get_current_time();
-        dain->process(in0image, in1image, outimage);
+        dain->process(in0image, in1image, timestep, outimage);
         double end = ncnn::get_current_time();
 
         fprintf(stderr, "%f\n", end - start);

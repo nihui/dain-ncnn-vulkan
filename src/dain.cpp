@@ -16,12 +16,12 @@ DEFINE_LAYER_CREATOR(OpticalFlowWarp)
 DEFINE_LAYER_CREATOR(DepthFlowProjection)
 DEFINE_LAYER_CREATOR(FilterInterpolation)
 
-DAIN::DAIN()
+DAIN::DAIN(int gpuid)
 {
     tilesize = 256;
     prepadding = 32;
 
-    vkdev = ncnn::get_gpu_device(0);
+    vkdev = ncnn::get_gpu_device(gpuid);
     dain_preproc = 0;
     dain_postproc = 0;
 }
@@ -117,7 +117,7 @@ int DAIN::load()
     return 0;
 }
 
-int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Mat& outimage) const
+int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float timestep, ncnn::Mat& outimage) const
 {
     const unsigned char* pixel0data = (const unsigned char*)in0image.data;
     const unsigned char* pixel1data = (const unsigned char*)in1image.data;
@@ -336,8 +336,8 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, ncnn::Ma
             // interpolation
             ncnn::Mat flow0_w(1);
             ncnn::Mat flow1_w(1);
-            flow0_w[0] = 0.5f;
-            flow1_w[0] = 0.5f;
+            flow0_w[0] = timestep;
+            flow1_w[0] = 1.f - timestep;
 
             ncnn::VkMat out_gpu_padded;
             {
