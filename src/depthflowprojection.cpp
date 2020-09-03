@@ -2,8 +2,6 @@
 
 #include "dain_ops.h"
 
-#include "depthflowprojection_project.comp.hex.h"
-#include "depthflowprojection_average.comp.hex.h"
 #include "depthflowprojection.comp.hex.h"
 #include "depthflowprojection_fillhole.comp.hex.h"
 
