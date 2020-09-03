@@ -6,6 +6,10 @@
 #include <vector>
 #include <clocale>
 
+#if _WIN32
+// image decoder and encoder with wic
+#include "wic_image.h"
+#else // _WIN32
 // image decoder and encoder with stb
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_NO_PSD
@@ -17,6 +21,7 @@
 #include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+#endif // _WIN32
 
 #if _WIN32
 #include <wchar.h>
@@ -109,7 +114,11 @@ void load(const path_t& imagepath, ncnn::Mat& image)
     int h;
     int c;
 
+#if _WIN32
+    pixeldata = wic_decode_image(imagepath.c_str(), &w, &h, &c);
+#else
     pixeldata = stbi_load(imagepath.c_str(), &w, &h, &c, 3);
+#endif
     if (pixeldata)
     {
         image = ncnn::Mat(w, h, (void*)pixeldata, (size_t)3, 3);
@@ -122,11 +131,19 @@ void save(const path_t& imagepath, const ncnn::Mat& image)
 
     if (ext == PATHSTR("png") || ext == PATHSTR("PNG"))
     {
+#if _WIN32
+        wic_encode_image(imagepath.c_str(), image.w, image.h, image.elempack, image.data);
+#else
         stbi_write_png(imagepath.c_str(), image.w, image.h, image.elempack, image.data, 0);
+#endif
     }
     else if (ext == PATHSTR("jpg") || ext == PATHSTR("JPG") || ext == PATHSTR("jpeg") || ext == PATHSTR("JPEG"))
     {
+#if _WIN32
+        wic_encode_jpeg_image(imagepath.c_str(), image.w, image.h, image.elempack, image.data);
+#else
         stbi_write_jpg(imagepath.c_str(), image.w, image.h, image.elempack, image.data, 100);
+#endif
     }
 }
 
