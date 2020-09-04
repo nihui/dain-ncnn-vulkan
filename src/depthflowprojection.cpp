@@ -9,7 +9,7 @@ using namespace ncnn;
 
 DepthFlowProjection::DepthFlowProjection()
 {
-    support_vulkan = true;
+//     support_vulkan = true;
 
     pipeline_depthflowprojection = 0;
     pipeline_depthflowprojection_fillhole = 0;
