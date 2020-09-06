@@ -687,7 +687,7 @@ int main(int argc, char** argv)
                 char tmp[256];
                 sprintf(tmp, "%06d", i+1); // ffmpeg start from 1
 #endif
-                path_t output_filename = PATHSTR(tmp) + PATHSTR('.') + format;
+                path_t output_filename = path_t(tmp) + PATHSTR('.') + format;
 
                 input0_files[i] = inputpath + PATHSTR('/') + filename0;
                 input1_files[i] = inputpath + PATHSTR('/') + filename1;
