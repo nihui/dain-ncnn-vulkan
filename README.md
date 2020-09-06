@@ -45,8 +45,11 @@ Input two frame images, output one interpolated frame image.
 mkdir input_frames
 mkdir output_frames
 
-# find the source fps with ffprobe, for example 24fps
+# find the source fps and format with ffprobe, for example 24fps, AAC
 ffprobe input.mp4
+
+# extract audio
+ffmpeg -i input.mp4 -vn -acodec copy audio.m4a
 
 # decode all frames
 ffmpeg -i input.mp4 input_frames/frame_%06d.png
@@ -54,8 +57,8 @@ ffmpeg -i input.mp4 input_frames/frame_%06d.png
 # interpolate 2x frame count
 ./dain-ncnn-vulkan -i input_frames -o output_frames
 
-# encode interpolated frames with 48fps
-ffmpeg -framerate 48 -i output_frames/%06d.png -crf 20 -c:v libx264 -pix_fmt yuv420p output.mp4
+# encode interpolated frames in 48fps with audio
+ffmpeg -framerate 48 -i output_frames/%06d.png -i audio.m4a -c:a copy -crf 20 -c:v libx264 -pix_fmt yuv420p output.mp4
 ```
 
 ### Full Usages

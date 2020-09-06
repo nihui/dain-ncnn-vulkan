@@ -657,6 +657,7 @@ int main(int argc, char** argv)
             double scale = (double)count / numframe;
             for (int i=0; i<numframe; i++)
             {
+                // TODO provide option to control timestep interpolate method
 //                 float fx = (float)((i + 0.5) * scale - 0.5);
                 float fx = i * scale;
                 int sx = static_cast<int>(floor(fx));
@@ -678,9 +679,10 @@ int main(int argc, char** argv)
                 path_t filename0 = filenames[sx];
                 path_t filename1 = filenames[sx + 1];
 
+                // TODO provide option to specify output filename scheme
                 char tmp[256];
                 sprintf(tmp, "%06d", i+1); // ffmpeg start from 1
-                path_t output_filename = std::string(tmp) + PATHSTR('.') + format;
+                path_t output_filename = PATHSTR(tmp) + PATHSTR('.') + format;
 
                 input0_files[i] = inputpath + PATHSTR('/') + filename0;
                 input1_files[i] = inputpath + PATHSTR('/') + filename1;
