@@ -680,8 +680,13 @@ int main(int argc, char** argv)
                 path_t filename1 = filenames[sx + 1];
 
                 // TODO provide option to specify output filename scheme
+#if _WIN32
+                wchar_t tmp[256];
+                swprintf(tmp, L"%06d", i+1);
+#else
                 char tmp[256];
                 sprintf(tmp, "%06d", i+1); // ffmpeg start from 1
+#endif
                 path_t output_filename = PATHSTR(tmp) + PATHSTR('.') + format;
 
                 input0_files[i] = inputpath + PATHSTR('/') + filename0;
