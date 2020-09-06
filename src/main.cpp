@@ -456,7 +456,7 @@ int main(int argc, char** argv)
 #if _WIN32
     setlocale(LC_ALL, "");
     wchar_t opt;
-    while ((opt = getopt(argc, argv, L"0:1:i:o:n:s:t:g:f:vh")) != (wchar_t)-1)
+    while ((opt = getopt(argc, argv, L"0:1:i:o:n:s:t:g:j:f:vh")) != (wchar_t)-1)
     {
         switch (opt)
         {
@@ -502,7 +502,7 @@ int main(int argc, char** argv)
     }
 #else // _WIN32
     int opt;
-    while ((opt = getopt(argc, argv, "0:1:i:o:n:s:t:g:f:vh")) != -1)
+    while ((opt = getopt(argc, argv, "0:1:i:o:n:s:t:g:j:f:vh")) != -1)
     {
         switch (opt)
         {
