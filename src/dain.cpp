@@ -119,6 +119,18 @@ int DAIN::load()
 
 int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float timestep, ncnn::Mat& outimage) const
 {
+    if (timestep == 0.f)
+    {
+        outimage = in0image;
+        return 0;
+    }
+
+    if (timestep == 1.f)
+    {
+        outimage = in1image;
+        return 0;
+    }
+
     const unsigned char* pixel0data = (const unsigned char*)in0image.data;
     const unsigned char* pixel1data = (const unsigned char*)in1image.data;
     const int w = in0image.w;
@@ -146,7 +158,7 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
     const int xtiles = (w_padded + TILE_SIZE_X - 1) / TILE_SIZE_X;
     const int ytiles = (h_padded + TILE_SIZE_Y - 1) / TILE_SIZE_Y;
 
-    fprintf(stderr, "tiles %d %d\n", xtiles, ytiles);
+//     fprintf(stderr, "tiles %d %d\n", xtiles, ytiles);
 
     const size_t in_out_tile_elemsize = opt.use_fp16_storage ? 2u : 4u;
 
@@ -390,7 +402,7 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
                 cmd.reset();
             }
 
-            fprintf(stderr, "%.2f%%\n", (float)(yi * xtiles + xi) / (ytiles * xtiles) * 100);
+//             fprintf(stderr, "%.2f%%\n", (float)(yi * xtiles + xi) / (ytiles * xtiles) * 100);
         }
 
         // download

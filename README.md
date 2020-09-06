@@ -36,25 +36,55 @@ Input two frame images, output one interpolated frame image.
 
 ```shell
 ./dain-ncnn-vulkan -0 0.jpg -1 1.jpg -o 01.jpg
+./dain-ncnn-vulkan -i input_frames/ -o output_frames/
+```
+
+### Video Interpolation with FFmpeg
+
+```shell
+mkdir input_frames
+mkdir output_frames
+
+# find the source fps with ffprobe, for example 24fps
+ffprobe input.mp4
+
+# decode all frames
+ffmpeg -i input.mp4 input_frames/frame_%06d.png
+
+# interpolate 2x frame count
+./dain-ncnn-vulkan -i input_frames -o output_frames
+
+# encode interpolated frames with 48fps
+ffmpeg -framerate 48 -i output_frames/%06d.png -crf 20 -c:v libx264 -pix_fmt yuv420p output.mp4
 ```
 
 ### Full Usages
 
 ```console
 Usage: dain-ncnn-vulkan -0 infile -1 infile1 -o outfile [options]...
+       dain-ncnn-vulkan -i indir -o outdir [options]...
 
   -h                   show this help
-  -0 input0-path       input image0 path (jpg/png)
-  -1 input1-path       input image1 path (jpg/png)
-  -o output-path       output image path (jpg/png)
+  -v                   verbose output
+  -0 input0-path       input image0 path (jpg/png/webp)
+  -1 input1-path       input image1 path (jpg/png/webp)
+  -i input-path        input image directory (jpg/png/webp)
+  -o output-path       output image path (jpg/png/webp) or directory
+  -n num-frame         target frame count (default=N*2)
   -s time-step         time step (0~1, default=0.5)
-  -t tile-size         tile size (>=128, default=256)
-  -g gpu-id            gpu device to use (default=0)
+  -t tile-size         tile size (>=128, default=256) can be 256,256,128 for multi-gpu
+  -g gpu-id            gpu device to use (default=auto) can be 0,1,2 for multi-gpu
+  -j load:proc:save    thread count for load/proc/save (default=1:2:2) can be 1:2,2,2:2 for multi-gpu
+  -f format            output image format (jpg/png/webp, default=ext/png)
 ```
 
 - `input0-path`, `input1-path` and `output-path` accept file path
+- `input-path` and `output-path` accept file directory
+- `num-frame` = target frame count
 - `time-step` = interpolation time
 - `tile-size` = tile size, use smaller value to reduce GPU memory usage, must be multiple of 32, default 256
+- `load:proc:save` = thread count for the three stages (image decoding + dain interpolation + image encoding), using larger values may increase GPU usage and consume more GPU memory. You can tune this configuration with "4:4:4" for many small-size images, and "2:2:2" for large-size images. The default setting usually works fine for most situations. If you find that your GPU is hungry, try increasing thread count to achieve faster processing.
+- `format` = the format of the image to be output, png is better supported, however webp generally yields smaller file sizes, both are losslessly encoded
 
 If you encounter a crash or error, try upgrading your GPU driver:
 
@@ -103,9 +133,9 @@ cmake --build . -j 4
 * ~~github action ci~~
 * test-time sptial augmentation aka TTA-s
 * test-time temporal augmentation aka TTA-t
-* load images from directory
-* read write webp
-* good multi-gpu support
+* ~~load images from directory~~
+* ~~read write webp~~
+* ~~good multi-gpu support~~
 
 
 ## Original DAIN Project
@@ -115,5 +145,6 @@ cmake --build . -j 4
 ## Other Open-Source Code Used
 
 - https://github.com/Tencent/ncnn for fast neural network inference on ALL PLATFORMS
+- https://github.com/webmproject/libwebp for encoding and decoding Webp images on ALL PLATFORMS
 - https://github.com/nothings/stb for decoding and encoding image on Linux / MacOS
 - https://github.com/tronkko/dirent for listing files in directory on Windows
