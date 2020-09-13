@@ -49,7 +49,9 @@ public:
     virtual int forward(const std::vector<ncnn::VkMat>& bottom_blobs, std::vector<ncnn::VkMat>& top_blobs, ncnn::VkCompute& cmd, const ncnn::Option& opt) const;
 
 private:
-    ncnn::Pipeline* pipeline_depthflowprojection;
+    ncnn::Pipeline* pipeline_depthflowprojection_zero;
+    ncnn::Pipeline* pipeline_depthflowprojection_project;
+    ncnn::Pipeline* pipeline_depthflowprojection_average;
     ncnn::Pipeline* pipeline_depthflowprojection_fillhole;
 };
 

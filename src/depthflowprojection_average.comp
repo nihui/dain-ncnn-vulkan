@@ -1,0 +1,41 @@
+// dain implemented with ncnn library
+
+#version 450
+
+#if NCNN_fp16_storage
+#extension GL_EXT_shader_16bit_storage: require
+#endif
+#if NCNN_fp16_arithmetic
+#extension GL_EXT_shader_explicit_arithmetic_types_float16: require
+#endif
+
+layout (binding = 0) readonly buffer fxydm_blob { uint fxydm_blob_data[]; };
+layout (binding = 1) readonly buffer count_blob { uint count_blob_data[]; };
+layout (binding = 2) writeonly buffer top_blob { sfp top_blob_data[]; };
+
+layout (push_constant) uniform parameter
+{
+    int w;
+    int cstep;
+} p;
+
+void main()
+{
+    int gx = int(gl_GlobalInvocationID.x);
+    int gy = int(gl_GlobalInvocationID.y);
+    int gz = int(gl_GlobalInvocationID.z);
+
+    if (gx >= p.w || gy >= 1 || gz >= 1)
+        return;
+
+    vec2 vxy = unpackHalf2x16(fxydm_blob_data[gx]);
+    float count = uintBitsToFloat(count_blob_data[gx]);
+
+    if (count > 0.f)
+    {
+        vxy /= count;
+    }
+
+    buffer_st1(top_blob_data, gx, afp(vxy.x));
+    buffer_st1(top_blob_data, p.cstep + gx, afp(vxy.y));
+}

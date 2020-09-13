@@ -2,16 +2,20 @@
 
 #include "dain_ops.h"
 
-#include "depthflowprojection.comp.hex.h"
+#include "depthflowprojection_zero.comp.hex.h"
+#include "depthflowprojection_project.comp.hex.h"
+#include "depthflowprojection_average.comp.hex.h"
 #include "depthflowprojection_fillhole.comp.hex.h"
 
 using namespace ncnn;
 
 DepthFlowProjection::DepthFlowProjection()
 {
-//     support_vulkan = true;
+    support_vulkan = true;
 
-    pipeline_depthflowprojection = 0;
+    pipeline_depthflowprojection_zero = 0;
+    pipeline_depthflowprojection_project = 0;
+    pipeline_depthflowprojection_average = 0;
     pipeline_depthflowprojection_fillhole = 0;
 }
 
@@ -27,13 +31,47 @@ int DepthFlowProjection::create_pipeline(const Option& opt)
             ncnn::MutexLockGuard guard(lock);
             if (spirv.empty())
             {
-                compile_spirv_module(depthflowprojection_comp_data, sizeof(depthflowprojection_comp_data), opt, spirv);
+                compile_spirv_module(depthflowprojection_zero_comp_data, sizeof(depthflowprojection_zero_comp_data), opt, spirv);
             }
         }
 
-        pipeline_depthflowprojection = new Pipeline(vkdev);
-        pipeline_depthflowprojection->set_optimal_local_size_xyz(8, 8, 1);
-        pipeline_depthflowprojection->create(spirv.data(), spirv.size() * 4, specializations);
+        pipeline_depthflowprojection_zero = new Pipeline(vkdev);
+        pipeline_depthflowprojection_zero->set_optimal_local_size_xyz(64, 1, 1);
+        pipeline_depthflowprojection_zero->create(spirv.data(), spirv.size() * 4, specializations);
+    }
+
+    // pack1
+    {
+        static std::vector<uint32_t> spirv;
+        static ncnn::Mutex lock;
+        {
+            ncnn::MutexLockGuard guard(lock);
+            if (spirv.empty())
+            {
+                compile_spirv_module(depthflowprojection_project_comp_data, sizeof(depthflowprojection_project_comp_data), opt, spirv);
+            }
+        }
+
+        pipeline_depthflowprojection_project = new Pipeline(vkdev);
+        pipeline_depthflowprojection_project->set_optimal_local_size_xyz(8, 8, 1);
+        pipeline_depthflowprojection_project->create(spirv.data(), spirv.size() * 4, specializations);
+    }
+
+    // pack1
+    {
+        static std::vector<uint32_t> spirv;
+        static ncnn::Mutex lock;
+        {
+            ncnn::MutexLockGuard guard(lock);
+            if (spirv.empty())
+            {
+                compile_spirv_module(depthflowprojection_average_comp_data, sizeof(depthflowprojection_average_comp_data), opt, spirv);
+            }
+        }
+
+        pipeline_depthflowprojection_average = new Pipeline(vkdev);
+        pipeline_depthflowprojection_average->set_optimal_local_size_xyz(64, 1, 1);
+        pipeline_depthflowprojection_average->create(spirv.data(), spirv.size() * 4, specializations);
     }
 
     // pack1
@@ -58,8 +96,14 @@ int DepthFlowProjection::create_pipeline(const Option& opt)
 
 int DepthFlowProjection::destroy_pipeline(const Option& opt)
 {
-    delete pipeline_depthflowprojection;
-    pipeline_depthflowprojection = 0;
+    delete pipeline_depthflowprojection_zero;
+    pipeline_depthflowprojection_zero = 0;
+
+    delete pipeline_depthflowprojection_project;
+    pipeline_depthflowprojection_project = 0;
+
+    delete pipeline_depthflowprojection_average;
+    pipeline_depthflowprojection_average = 0;
 
     delete pipeline_depthflowprojection_fillhole;
     pipeline_depthflowprojection_fillhole = 0;
@@ -283,29 +327,66 @@ int DepthFlowProjection::forward(const std::vector<VkMat>& bottom_blobs, std::ve
     if (top_blob.empty())
         return -100;
 
-    VkMat count_blob(w, h, 1, elemsize, elempack, opt.workspace_vkallocator);
+    VkMat fxydm_blob(w, h, 1, 4u, 1, opt.workspace_vkallocator);
+    if (fxydm_blob.empty())
+        return -100;
+
+    VkMat count_blob(w, h, 1, 4u, 1, opt.workspace_vkallocator);
     if (count_blob.empty())
         return -100;
 
-    // projection + average
+    // zero
+    {
+        std::vector<VkMat> bindings(2);
+        bindings[0] = fxydm_blob;
+        bindings[1] = count_blob;
+
+        std::vector<vk_constant_type> constants(1);
+        constants[0].i = w * h;
+
+        VkMat dispatcher;
+        dispatcher.w = w * h;
+        dispatcher.h = 1;
+        dispatcher.c = 1;
+        cmd.record_pipeline(pipeline_depthflowprojection_zero, bindings, constants, dispatcher);
+    }
+
+    // projection
     {
         std::vector<VkMat> bindings(4);
         bindings[0] = flow_blob;
         bindings[1] = depth_blob;
-        bindings[2] = top_blob;
+        bindings[2] = fxydm_blob;
         bindings[3] = count_blob;
 
-        std::vector<vk_constant_type> constants(4);
-        constants[0].i = top_blob.w;
-        constants[1].i = top_blob.h;
-        constants[2].i = top_blob.c;
-        constants[3].i = top_blob.cstep;
+        std::vector<vk_constant_type> constants(3);
+        constants[0].i = flow_blob.w;
+        constants[1].i = flow_blob.h;
+        constants[2].i = flow_blob.cstep;
 
         VkMat dispatcher;
-        dispatcher.w = top_blob.w;
-        dispatcher.h = top_blob.h;
+        dispatcher.w = flow_blob.w;
+        dispatcher.h = flow_blob.h;
         dispatcher.c = 1;
-        cmd.record_pipeline(pipeline_depthflowprojection, bindings, constants, dispatcher);
+        cmd.record_pipeline(pipeline_depthflowprojection_project, bindings, constants, dispatcher);
+    }
+
+    // average
+    {
+        std::vector<VkMat> bindings(3);
+        bindings[0] = fxydm_blob;
+        bindings[1] = count_blob;
+        bindings[2] = top_blob;
+
+        std::vector<vk_constant_type> constants(2);
+        constants[0].i = w * h;
+        constants[1].i = top_blob.cstep;
+
+        VkMat dispatcher;
+        dispatcher.w = w * h;
+        dispatcher.h = 1;
+        dispatcher.c = 1;
+        cmd.record_pipeline(pipeline_depthflowprojection_average, bindings, constants, dispatcher);
     }
 
     // fill hole

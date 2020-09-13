@@ -9,7 +9,7 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_float16: require
 #endif
 
-layout (binding = 0) readonly buffer count_blob { sfp count_blob_data[]; };
+layout (binding = 0) readonly buffer count_blob { uint count_blob_data[]; };
 layout (binding = 1) buffer top_blob { sfp top_blob_data[]; };
 
 layout (push_constant) uniform parameter
@@ -29,7 +29,7 @@ void main()
     if (gx >= p.w || gy >= p.h || gz >= 1)
         return;
 
-    afp count = buffer_ld1(count_blob_data, gy * p.w + gx);
+    afp count = afp(uintBitsToFloat(count_blob_data[gy * p.w + gx]));
     if (count > afp(0.f))
         return;
 
@@ -42,7 +42,7 @@ void main()
         int left_x = gx - 1;
         while (left_x >= 0)
         {
-            afp left_count = buffer_ld1(count_blob_data, gy * p.w + left_x);
+            afp left_count = afp(uintBitsToFloat(count_blob_data[gy * p.w + left_x]));
             if (left_count > afp(0.f))
             {
                 fxd += buffer_ld1(top_blob_data, gy * p.w + left_x);
@@ -60,7 +60,7 @@ void main()
         int right_x = gx + 1;
         while (right_x <= p.w - 1)
         {
-            afp right_count = buffer_ld1(count_blob_data, gy * p.w + right_x);
+            afp right_count = afp(uintBitsToFloat(count_blob_data[gy * p.w + right_x]));
             if (right_count > afp(0.f))
             {
                 fxd += buffer_ld1(top_blob_data, gy * p.w + right_x);
@@ -78,7 +78,7 @@ void main()
         int up_y = gy - 1;
         while (up_y >= 0)
         {
-            afp up_count = buffer_ld1(count_blob_data, up_y * p.w + gx);
+            afp up_count = afp(uintBitsToFloat(count_blob_data[up_y * p.w + gx]));
             if (up_count > afp(0.f))
             {
                 fxd += buffer_ld1(top_blob_data, up_y * p.w + gx);
@@ -94,9 +94,9 @@ void main()
     // down
     {
         int down_y = gy + 1;
-        while (down_y >= 0)
+        while (down_y <= p.h - 1)
         {
-            afp down_count = buffer_ld1(count_blob_data, down_y * p.w + gx);
+            afp down_count = afp(uintBitsToFloat(count_blob_data[down_y * p.w + gx]));
             if (down_count > afp(0.f))
             {
                 fxd += buffer_ld1(top_blob_data, down_y * p.w + gx);

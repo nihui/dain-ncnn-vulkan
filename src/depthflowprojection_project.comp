@@ -1,0 +1,98 @@
+// dain implemented with ncnn library
+
+#version 450
+
+#if NCNN_fp16_storage
+#extension GL_EXT_shader_16bit_storage: require
+#endif
+#if NCNN_fp16_arithmetic
+#extension GL_EXT_shader_explicit_arithmetic_types_float16: require
+#endif
+
+layout (binding = 0) readonly buffer flow_blob { sfp flow_blob_data[]; };
+layout (binding = 1) readonly buffer depth_blob { sfp depth_blob_data[]; };
+layout (binding = 2) coherent buffer fxydm_blob { uint fxydm_blob_data[]; };
+layout (binding = 3) coherent buffer count_blob { uint count_blob_data[]; };
+
+layout (push_constant) uniform parameter
+{
+    int w;
+    int h;
+    int cstep;
+} p;
+
+#define atomic_add_vec2(mem, id, x) \
+{ \
+    uint old_u32 = atomicAdd(mem[id], uint(0)); \
+    vec2 old_f32 = unpackHalf2x16(old_u32); \
+    vec2 new_f32 = old_f32 + x; \
+    uint new_u32 = packHalf2x16(new_f32); \
+    uint old_u32_qaq = atomicCompSwap(mem[id], old_u32, new_u32); \
+    while (old_u32_qaq != old_u32) \
+    { \
+        old_u32 = old_u32_qaq; \
+        vec2 old_f32 = unpackHalf2x16(old_u32); \
+        vec2 new_f32 = old_f32 + x; \
+        uint new_u32 = packHalf2x16(new_f32); \
+        old_u32_qaq = atomicCompSwap(mem[id], old_u32, new_u32); \
+    } \
+}
+
+#define atomic_add_float(mem, id, x) \
+{ \
+    uint old_u32 = atomicAdd(mem[id], uint(0)); \
+    float old_f32 = uintBitsToFloat(old_u32); \
+    float new_f32 = old_f32 + x; \
+    uint new_u32 = floatBitsToUint(new_f32); \
+    uint old_u32_qaq = atomicCompSwap(mem[id], old_u32, new_u32); \
+    while (old_u32_qaq != old_u32) \
+    { \
+        old_u32 = old_u32_qaq; \
+        float old_f32 = uintBitsToFloat(old_u32); \
+        float new_f32 = old_f32 + x; \
+        uint new_u32 = floatBitsToUint(new_f32); \
+        old_u32_qaq = atomicCompSwap(mem[id], old_u32, new_u32); \
+    } \
+}
+
+void main()
+{
+    int gx = int(gl_GlobalInvocationID.x);
+    int gy = int(gl_GlobalInvocationID.y);
+    int gz = int(gl_GlobalInvocationID.z);
+
+    if (gx >= p.w || gy >= p.h || gz >= 1)
+        return;
+
+    int gi = gy * p.w + gx;
+
+    afp depth = buffer_ld1(depth_blob_data, gi);
+    afp flow_x = buffer_ld1(flow_blob_data, gi);
+    afp flow_y = buffer_ld1(flow_blob_data, p.cstep + gi);
+
+    afp sample_x = afp(gx) + flow_x;
+    afp sample_y = afp(gy) + flow_y;
+
+    int x0 = int(floor(sample_x));
+    int y0 = int(floor(sample_y));
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+
+    if (x0 < 0 || y0 < 0 || x0 >= p.w - 1 || y0 >= p.h - 1)
+    {
+        // discard out of image
+        return;
+    }
+
+    vec2 dfxy = vec2(-flow_x, -flow_y) * depth;
+
+    atomic_add_vec2(fxydm_blob_data, y0 * p.w + x0, dfxy);
+    atomic_add_vec2(fxydm_blob_data, y0 * p.w + x1, dfxy);
+    atomic_add_vec2(fxydm_blob_data, y1 * p.w + x0, dfxy);
+    atomic_add_vec2(fxydm_blob_data, y1 * p.w + x1, dfxy);
+
+    atomic_add_float(count_blob_data, y0 * p.w + x0, float(depth));
+    atomic_add_float(count_blob_data, y0 * p.w + x1, float(depth));
+    atomic_add_float(count_blob_data, y1 * p.w + x0, float(depth));
+    atomic_add_float(count_blob_data, y1 * p.w + x1, float(depth));
+}
