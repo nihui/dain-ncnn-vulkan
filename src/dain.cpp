@@ -60,17 +60,17 @@ int DAIN::load()
     interpolation.register_custom_layer("dain.DepthFlowProjection", DepthFlowProjection_layer_creator);
     interpolation.register_custom_layer("dain.FilterInterpolation", FilterInterpolation_layer_creator);
 
-    depthnet.load_param("depthnet.param");
-    depthnet.load_model("depthnet.bin");
+    depthnet.load_param("best/depthnet.param");
+    depthnet.load_model("best/depthnet.bin");
 
-    flownet.load_param("flownet.param");
-    flownet.load_model("flownet.bin");
+    flownet.load_param("best/flownet.param");
+    flownet.load_model("best/flownet.bin");
 
-    ctxnet.load_param("ctxnet.param");
-    ctxnet.load_model("ctxnet.bin");
+    ctxnet.load_param("best/ctxnet.param");
+    ctxnet.load_model("best/ctxnet.bin");
 
-    interpolation.load_param("interpolation.param");
-    interpolation.load_model("interpolation.bin");
+    interpolation.load_param("best/interpolation.param");
+    interpolation.load_model("best/interpolation.bin");
 
     // initialize preprocess and postprocess pipeline
     {
