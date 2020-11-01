@@ -60,6 +60,8 @@ int DAIN::load()
     interpolation.register_custom_layer("dain.DepthFlowProjection", DepthFlowProjection_layer_creator);
     interpolation.register_custom_layer("dain.FilterInterpolation", FilterInterpolation_layer_creator);
 
+    // looking for best/* for action builds
+    // not ideal way, when pack from linux, better send those modules to /usr/share/.
     depthnet.load_param("best/depthnet.param");
     depthnet.load_model("best/depthnet.bin");
 
