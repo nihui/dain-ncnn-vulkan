@@ -368,6 +368,19 @@ int DAIN::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
                 ex.input("flow1_w", flow1_w);
                 ex.input("ctx0", ctx0);
                 ex.input("ctx1", ctx1);
+
+                // save some memory
+                in0_tile_gpu.release();
+                in1_tile_gpu.release();
+                depth0.release();
+                depth1.release();
+                flow0.release();
+                flow1.release();
+                flow0_w.release();
+                flow1_w.release();
+                ctx0.release();
+                ctx1.release();
+
                 ex.extract("output_rectified", out_gpu_padded, cmd);
             }
 
