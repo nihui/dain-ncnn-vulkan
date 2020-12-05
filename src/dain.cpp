@@ -108,10 +108,17 @@ int DAIN::load(const std::string& modeldir)
     interpolation.register_custom_layer("dain.DepthFlowProjection", DepthFlowProjection_layer_creator);
     interpolation.register_custom_layer("dain.FilterInterpolation", FilterInterpolation_layer_creator);
 
+#if _WIN32
+    load_param_model(depthnet, modeldir, L"depthnet");
+    load_param_model(flownet, modeldir, L"flownet");
+    load_param_model(ctxnet, modeldir, L"ctxnet");
+    load_param_model(interpolation, modeldir, L"interpolation");
+#else
     load_param_model(depthnet, modeldir, "depthnet");
     load_param_model(flownet, modeldir, "flownet");
     load_param_model(ctxnet, modeldir, "ctxnet");
     load_param_model(interpolation, modeldir, "interpolation");
+#endif
 
     // initialize preprocess and postprocess pipeline
     {
