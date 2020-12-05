@@ -1,7 +1,5 @@
 # DAIN ncnn Vulkan
 
-:exclamation: :exclamation: :exclamation: This software is in the early development stage, it may bite your cat
-
 ncnn implementation of DAIN, Depth-Aware Video Frame Interpolation.
 
 dain-ncnn-vulkan uses [ncnn project](https://github.com/Tencent/ncnn) as the universal neural network inference framework.
