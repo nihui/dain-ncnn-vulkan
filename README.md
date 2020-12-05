@@ -76,6 +76,7 @@ Usage: dain-ncnn-vulkan -0 infile -1 infile1 -o outfile [options]...
   -n num-frame         target frame count (default=N*2)
   -s time-step         time step (0~1, default=0.5)
   -t tile-size         tile size (>=128, default=256) can be 256,256,128 for multi-gpu
+  -m model-path        dain model path (default=best)
   -g gpu-id            gpu device to use (default=auto) can be 0,1,2 for multi-gpu
   -j load:proc:save    thread count for load/proc/save (default=1:2:2) can be 1:2,2,2:2 for multi-gpu
   -f format            output image format (jpg/png/webp, default=ext/png)

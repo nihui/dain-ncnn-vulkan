@@ -14,7 +14,11 @@ public:
     DAIN(int gpuid);
     ~DAIN();
 
-    int load();
+#if _WIN32
+    int load(const std::wstring& modeldir);
+#else
+    int load(const std::string& modeldir);
+#endif
 
     int process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float timestep, ncnn::Mat& outimage) const;
 

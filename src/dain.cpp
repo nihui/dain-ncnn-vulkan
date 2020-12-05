@@ -35,7 +35,55 @@ DAIN::~DAIN()
     }
 }
 
-int DAIN::load()
+#if _WIN32
+static void load_param_model(ncnn::Net& net, const std::wstring& modeldir, const wchar_t* name)
+{
+    wchar_t parampath[256];
+    wchar_t modelpath[256];
+    swprintf(parampath, 256, L"%s/%s.param", modeldir.c_str(), name);
+    swprintf(modelpath, 256, L"%s/%s.bin", modeldir.c_str(), name);
+
+    {
+        FILE* fp = _wfopen(parampath, L"rb");
+        if (!fp)
+        {
+            fwprintf(stderr, L"_wfopen %ls failed\n", parampath);
+        }
+
+        net.load_param(fp);
+
+        fclose(fp);
+    }
+    {
+        FILE* fp = _wfopen(modelpath, L"rb");
+        if (!fp)
+        {
+            fwprintf(stderr, L"_wfopen %ls failed\n", modelpath);
+        }
+
+        net.load_model(fp);
+
+        fclose(fp);
+    }
+}
+#else
+static void load_param_model(ncnn::Net& net, const std::string& modeldir, const char* name)
+{
+    char parampath[256];
+    char modelpath[256];
+    sprintf(parampath, "%s/%s.param", modeldir.c_str(), name);
+    sprintf(modelpath, "%s/%s.bin", modeldir.c_str(), name);
+
+    net.load_param(parampath);
+    net.load_model(modelpath);
+}
+#endif
+
+#if _WIN32
+int DAIN::load(const std::wstring& modeldir)
+#else
+int DAIN::load(const std::string& modeldir)
+#endif
 {
     ncnn::Option opt;
     opt.use_vulkan_compute = true;
@@ -60,17 +108,10 @@ int DAIN::load()
     interpolation.register_custom_layer("dain.DepthFlowProjection", DepthFlowProjection_layer_creator);
     interpolation.register_custom_layer("dain.FilterInterpolation", FilterInterpolation_layer_creator);
 
-    depthnet.load_param("depthnet.param");
-    depthnet.load_model("depthnet.bin");
-
-    flownet.load_param("flownet.param");
-    flownet.load_model("flownet.bin");
-
-    ctxnet.load_param("ctxnet.param");
-    ctxnet.load_model("ctxnet.bin");
-
-    interpolation.load_param("interpolation.param");
-    interpolation.load_model("interpolation.bin");
+    load_param_model(depthnet, modeldir, "depthnet");
+    load_param_model(flownet, modeldir, "flownet");
+    load_param_model(ctxnet, modeldir, "ctxnet");
+    load_param_model(interpolation, modeldir, "interpolation");
 
     // initialize preprocess and postprocess pipeline
     {

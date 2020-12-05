@@ -112,6 +112,7 @@ static void print_usage()
     fprintf(stderr, "  -n num-frame         target frame count (default=N*2)\n");
     fprintf(stderr, "  -s time-step         time step (0~1, default=0.5)\n");
     fprintf(stderr, "  -t tile-size         tile size (>=128, default=256) can be 256,256,128 for multi-gpu\n");
+    fprintf(stderr, "  -m model-path        dain model path (default=best)\n");
     fprintf(stderr, "  -g gpu-id            gpu device to use (default=auto) can be 0,1,2 for multi-gpu\n");
     fprintf(stderr, "  -j load:proc:save    thread count for load/proc/save (default=1:2:2) can be 1:2,2,2:2 for multi-gpu\n");
     fprintf(stderr, "  -f format            output image format (jpg/png/webp, default=ext/png)\n");
@@ -446,6 +447,7 @@ int main(int argc, char** argv)
     int numframe = 0;
     float timestep = 0.5f;
     std::vector<int> tilesize;
+    path_t model = PATHSTR("best");
     std::vector<int> gpuid;
     int jobs_load = 1;
     std::vector<int> jobs_proc;
@@ -456,7 +458,7 @@ int main(int argc, char** argv)
 #if _WIN32
     setlocale(LC_ALL, "");
     wchar_t opt;
-    while ((opt = getopt(argc, argv, L"0:1:i:o:n:s:t:g:j:f:vh")) != (wchar_t)-1)
+    while ((opt = getopt(argc, argv, L"0:1:i:o:n:s:t:m:g:j:f:vh")) != (wchar_t)-1)
     {
         switch (opt)
         {
@@ -481,6 +483,9 @@ int main(int argc, char** argv)
         case L't':
             tilesize = parse_optarg_int_array(optarg);
             break;
+        case L'm':
+            model = optarg;
+            break;
         case L'g':
             gpuid = parse_optarg_int_array(optarg);
             break;
@@ -502,7 +507,7 @@ int main(int argc, char** argv)
     }
 #else // _WIN32
     int opt;
-    while ((opt = getopt(argc, argv, "0:1:i:o:n:s:t:g:j:f:vh")) != -1)
+    while ((opt = getopt(argc, argv, "0:1:i:o:n:s:t:m:g:j:f:vh")) != -1)
     {
         switch (opt)
         {
@@ -526,6 +531,9 @@ int main(int argc, char** argv)
             break;
         case 't':
             tilesize = parse_optarg_int_array(optarg);
+            break;
+        case 'm':
+            model = optarg;
             break;
         case 'g':
             gpuid = parse_optarg_int_array(optarg);
@@ -710,6 +718,18 @@ int main(int argc, char** argv)
         }
     }
 
+    if (model.find(PATHSTR("best")) != path_t::npos)
+    {
+        // fine
+    }
+    else
+    {
+        fprintf(stderr, "unknown model dir type\n");
+        return -1;
+    }
+
+    path_t modeldir = sanitize_dirpath(model);
+
 #if _WIN32
     CoInitializeEx(NULL, COINIT_MULTITHREADED);
 #endif
@@ -764,7 +784,7 @@ int main(int argc, char** argv)
         {
             dain[i] = new DAIN(gpuid[i]);
 
-            dain[i]->load();
+            dain[i]->load(modeldir);
 
             dain[i]->tilesize = tilesize[i];
         }
