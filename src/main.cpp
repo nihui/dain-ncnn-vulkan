@@ -115,7 +115,7 @@ static void print_usage()
     fprintf(stderr, "  -m model-path        dain model path (default=best)\n");
     fprintf(stderr, "  -g gpu-id            gpu device to use (default=auto) can be 0,1,2 for multi-gpu\n");
     fprintf(stderr, "  -j load:proc:save    thread count for load/proc/save (default=1:2:2) can be 1:2,2,2:2 for multi-gpu\n");
-    fprintf(stderr, "  -f format            output image format (jpg/png/webp, default=ext/png)\n");
+    fprintf(stderr, "  -f pattern-format    output image filename pattern format (%%08d.jpg/png/webp, default=ext/%%08d.png)\n");
 }
 
 static int decode_image(const path_t& imagepath, ncnn::Mat& image, int* webp)
@@ -453,7 +453,7 @@ int main(int argc, char** argv)
     std::vector<int> jobs_proc;
     int jobs_save = 2;
     int verbose = 0;
-    path_t format = PATHSTR("png");
+    path_t pattern_format = PATHSTR("%08d.png");
 
 #if _WIN32
     setlocale(LC_ALL, "");
@@ -494,7 +494,7 @@ int main(int argc, char** argv)
             jobs_proc = parse_optarg_int_array(wcschr(optarg, L':') + 1);
             break;
         case L'f':
-            format = optarg;
+            pattern_format = optarg;
             break;
         case L'v':
             verbose = 1;
@@ -543,7 +543,7 @@ int main(int argc, char** argv)
             jobs_proc = parse_optarg_int_array(strchr(optarg, ':') + 1);
             break;
         case 'f':
-            format = optarg;
+            pattern_format = optarg;
             break;
         case 'v':
             verbose = 1;
@@ -608,6 +608,20 @@ int main(int argc, char** argv)
             fprintf(stderr, "invalid jobs_proc thread count argument\n");
             return -1;
         }
+    }
+
+    path_t pattern = get_file_name_without_extension(pattern_format);
+    path_t format = get_file_extension(pattern_format);
+
+    if (format.empty())
+    {
+        pattern = PATHSTR("%08d");
+        format = pattern_format;
+    }
+
+    if (pattern.empty())
+    {
+        pattern = PATHSTR("%08d");
     }
 
     if (!path_is_directory(outputpath))
@@ -687,13 +701,12 @@ int main(int argc, char** argv)
                 path_t filename0 = filenames[sx];
                 path_t filename1 = filenames[sx + 1];
 
-                // TODO provide option to specify output filename scheme
 #if _WIN32
                 wchar_t tmp[256];
-                swprintf(tmp, L"%06d", i+1);
+                swprintf(tmp, pattern.c_str(), i+1);
 #else
                 char tmp[256];
-                sprintf(tmp, "%06d", i+1); // ffmpeg start from 1
+                sprintf(tmp, pattern.c_str(), i+1); // ffmpeg start from 1
 #endif
                 path_t output_filename = path_t(tmp) + PATHSTR('.') + format;
 
