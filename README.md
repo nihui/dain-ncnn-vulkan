@@ -2,9 +2,9 @@
 
 ncnn implementation of DAIN, Depth-Aware Video Frame Interpolation.
 
-dain-ncnn-vulkan uses [ncnn project](https://github.com/Tencent/ncnn) as the universal neural network inference framework.
+dain-ncnn-vulkan uses the [ncnn project](https://github.com/Tencent/ncnn) as the universal neural network inference framework.
 
-## [Download]
+## Download
 
 Download Windows/Linux/MacOS Executable for Intel/AMD/Nvidia GPU
 
@@ -26,7 +26,7 @@ https://sites.google.com/view/wenbobao/dain
 
 http://arxiv.org/abs/1904.00830
 
-## Usages
+## Usage
 
 Input two frame images, output one interpolated frame image.
 
@@ -59,7 +59,7 @@ ffmpeg -i input.mp4 input_frames/frame_%06d.png
 ffmpeg -framerate 48 -i output_frames/%06d.png -i audio.m4a -c:a copy -crf 20 -c:v libx264 -pix_fmt yuv420p output.mp4
 ```
 
-### Full Usages
+### Full Usage
 
 ```console
 Usage: dain-ncnn-vulkan -0 infile -1 infile1 -o outfile [options]...
@@ -84,7 +84,7 @@ Usage: dain-ncnn-vulkan -0 infile -1 infile1 -o outfile [options]...
 - `input-path` and `output-path` accept file directory
 - `num-frame` = target frame count
 - `time-step` = interpolation time
-- `tile-size` = tile size, use smaller value to reduce GPU memory usage, must be multiple of 32, default 256
+- `tile-size` = tile size, use a smaller value to reduce GPU memory usage, it must be multiple of 32, default is 256
 - `load:proc:save` = thread count for the three stages (image decoding + dain interpolation + image encoding), using larger values may increase GPU usage and consume more GPU memory. You can tune this configuration with "4:4:4" for many small-size images, and "2:2:2" for large-size images. The default setting usually works fine for most situations. If you find that your GPU is hungry, try increasing thread count to achieve faster processing.
 - `pattern-format` = the filename pattern and format of the image to be output, png is better supported, however webp generally yields smaller file sizes, both are losslessly encoded
 
@@ -94,16 +94,20 @@ If you encounter a crash or error, try upgrading your GPU driver:
 - AMD: https://www.amd.com/en/support
 - NVIDIA: https://www.nvidia.com/Download/index.aspx
 
-## Build from Source
+## Building from Source
 
 1. Download and setup the Vulkan SDK from https://vulkan.lunarg.com/
-  - For Linux distributions, you can either get the essential build requirements from package manager
+  - For Linux distributions, you can also get the essential build requirements from your package manager
+ 
+Fedora/CentOS/RHEL:
 ```shell
 dnf install vulkan-headers vulkan-loader-devel
 ```
+Debian/Ubuntu
 ```shell
 apt-get install libvulkan-dev
 ```
+Arch/Manjaro
 ```shell
 pacman -S vulkan-headers vulkan-icd-loader
 ```
