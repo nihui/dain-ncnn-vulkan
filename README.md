@@ -1,16 +1,16 @@
 # DAIN ncnn Vulkan
 
-ncnn implementation of DAIN, Depth-Aware Video Frame Interpolation.
+An ncnn implementation of DAIN, Depth-Aware Video Frame Interpolation.
 
 dain-ncnn-vulkan uses the [ncnn project](https://github.com/Tencent/ncnn) as the universal neural network inference framework.
 
 ## Download
 
-Download Windows/Linux/MacOS Executable for Intel/AMD/Nvidia GPU
+Download the Windows/Linux/MacOS executable for Intel/AMD/Nvidia GPUs:
 
 **https://github.com/nihui/dain-ncnn-vulkan/actions**
 
-This package includes all the binaries and models required. It is portable, so no CUDA or Caffe runtime environment is needed :)
+Packages include all the binaries and models required. It is portable, so no CUDA or Caffe runtime environment is needed :)
 
 ## About DAIN
 
@@ -141,7 +141,7 @@ cmake --build . -j 4
 
 ## Other Open-Source Code Used
 
-- https://github.com/Tencent/ncnn for fast neural network inference on ALL PLATFORMS
+- https://github.com/Tencent/ncnn for fast neural network interface on ALL PLATFORMS
 - https://github.com/webmproject/libwebp for encoding and decoding Webp images on ALL PLATFORMS
-- https://github.com/nothings/stb for decoding and encoding image on Linux / MacOS
-- https://github.com/tronkko/dirent for listing files in directory on Windows
+- https://github.com/nothings/stb for decoding and encoding PNG/JPEG images on Linux / MacOS
+- https://github.com/tronkko/dirent for listing files in directories on Windows
