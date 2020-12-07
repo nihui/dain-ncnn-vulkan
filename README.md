@@ -80,12 +80,12 @@ Usage: dain-ncnn-vulkan -0 infile -1 infile1 -o outfile [options]...
   -f pattern-format    output image filename pattern format (%08d.jpg/png/webp, default=ext/%08d.png)
 ```
 
-- `input0-path`, `input1-path` and `output-path` accept file path
-- `input-path` and `output-path` accept file directory
+- `input0-path`, `input1-path` and `output-path` accept file paths
+- `input-path` and `output-path` accept file directories
 - `num-frame` = target frame count
 - `time-step` = interpolation time
 - `tile-size` = tile size, use a smaller value to reduce GPU memory usage, it must be multiple of 32, default is 256
-- `load:proc:save` = thread count for the three stages (image decoding + dain interpolation + image encoding), using larger values may increase GPU usage and consume more GPU memory. You can tune this configuration with "4:4:4" for many small-size images, and "2:2:2" for large-size images. The default setting usually works fine for most situations. If you find that your GPU is hungry, try increasing thread count to achieve faster processing.
+- `load:proc:save` = thread count for the three stages (image decoding -> dain interpolation -> image encoding), using larger values may increase GPU usage and consume more GPU memory. You can tune this configuration with "4:4:4" for many small-size images, and "2:2:2" for large-size images. The default setting usually works fine for most situations. If you find that your GPU is hungry, try increasing thread count to achieve faster processing.
 - `pattern-format` = the filename pattern and format of the image to be output, png is better supported, however webp generally yields smaller file sizes, both are losslessly encoded
 
 If you encounter a crash or error, try upgrading your GPU driver:
@@ -141,7 +141,7 @@ cmake --build . -j 4
 
 ## Other Open-Source Code Used
 
-- https://github.com/Tencent/ncnn for fast neural network interface on ALL PLATFORMS
+- https://github.com/Tencent/ncnn for fast neural network inference on ALL PLATFORMS
 - https://github.com/webmproject/libwebp for encoding and decoding Webp images on ALL PLATFORMS
 - https://github.com/nothings/stb for decoding and encoding PNG/JPEG images on Linux / MacOS
 - https://github.com/tronkko/dirent for listing files in directories on Windows
