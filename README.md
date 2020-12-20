@@ -1,14 +1,16 @@
 # DAIN ncnn Vulkan
 
+![CI](https://github.com/nihui/dain-ncnn-vulkan/workflows/CI/badge.svg)
+
 ncnn implementation of DAIN, Depth-Aware Video Frame Interpolation.
 
 dain-ncnn-vulkan uses [ncnn project](https://github.com/Tencent/ncnn) as the universal neural network inference framework.
 
-## [Download]
+## [Download](https://github.com/nihui/dain-ncnn-vulkan/releases)
 
 Download Windows/Linux/MacOS Executable for Intel/AMD/Nvidia GPU
 
-**https://github.com/nihui/dain-ncnn-vulkan/actions**
+**https://github.com/nihui/dain-ncnn-vulkan/releases**
 
 This package includes all the binaries and models required. It is portable, so no CUDA or Caffe runtime environment is needed :)
 
@@ -130,6 +132,21 @@ cmake --build . -j 4
 
 * test-time sptial augmentation aka TTA-s
 * test-time temporal augmentation aka TTA-t
+
+## Sample Images
+
+### Original Image
+
+![origin0](images/0.png)
+![origin1](images/1.png)
+
+### Interpolate with dain
+
+```shell
+dain-ncnn-vulkan.exe -0 0.png -1 1.png -o out.png
+```
+
+![cain](images/out.png)
 
 ## Original DAIN Project
 
