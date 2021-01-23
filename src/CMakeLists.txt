@@ -181,6 +181,7 @@ if(NOT USE_SYSTEM_NCNN)
     option(WITH_LAYER_groupnorm "" OFF)
     option(WITH_LAYER_layernorm "" OFF)
     option(WITH_LAYER_softplus "" OFF)
+    option(WITH_LAYER_gru "" OFF)
 
     add_subdirectory(ncnn)
 endif()
