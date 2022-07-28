@@ -20,7 +20,7 @@ DAIN::DAIN(int gpuid)
 {
     tilesize = 256;
     prepadding = 32;
-	
+
     vkdev = ncnn::get_gpu_device(gpuid);
     dain_preproc = 0;
     dain_postproc = 0;
