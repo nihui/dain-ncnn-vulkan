@@ -667,53 +667,50 @@ int main(int argc, char** argv)
             if (lr != 0)
                 return -1;
 
-            const int count = filenames.size();
-            if (numframe == 0)
-                numframe = count * 2;
+            std::size_t estimated_output_frame_count = (
+                static_cast<std::size_t>(filenames.size() / timestep) + 1
+            );
+            input0_files.reserve(estimated_output_frame_count);
+            input1_files.reserve(estimated_output_frame_count);
+            output_files.reserve(estimated_output_frame_count);
+            timesteps.reserve(estimated_output_frame_count);
 
-            input0_files.resize(numframe);
-            input1_files.resize(numframe);
-            output_files.resize(numframe);
-            timesteps.resize(numframe);
-
-            double scale = (double)count / numframe;
-            for (int i=0; i<numframe; i++)
+            std::size_t input_frame_index = 0;
+            float current_time = 0.0f;
+            while(input_frame_index + 1 < filenames.size())
             {
-                // TODO provide option to control timestep interpolate method
-//                 float fx = (float)((i + 0.5) * scale - 0.5);
-                float fx = i * scale;
-                int sx = static_cast<int>(floor(fx));
-                fx -= sx;
+                path_t filename0 = filenames[input_frame_index];
+                input0_files.push_back(inputpath + PATHSTR('/') + filename0);
 
-                if (sx < 0)
-                {
-                    sx = 0;
-                    fx = 0.f;
-                }
-                if (sx >= count - 1)
-                {
-                    sx = count - 2;
-                    fx = 1.f;
-                }
-
-//                 fprintf(stderr, "%d %f %d\n", i, fx, sx);
-
-                path_t filename0 = filenames[sx];
-                path_t filename1 = filenames[sx + 1];
+                path_t filename1 = filenames[input_frame_index + 1];
+                input1_files.push_back(inputpath + PATHSTR('/') + filename1);
 
 #if _WIN32
                 wchar_t tmp[256];
-                swprintf(tmp, pattern.c_str(), i+1);
+                swprintf(tmp, pattern.c_str(), output_files.size()+1);
 #else
                 char tmp[256];
-                sprintf(tmp, pattern.c_str(), i+1); // ffmpeg start from 1
+                sprintf(tmp, pattern.c_str(), output_files.size()+1); // ffmpeg start from 1
 #endif
                 path_t output_filename = path_t(tmp) + PATHSTR('.') + format;
+                output_files.push_back(outputpath + PATHSTR('/') + output_filename);
 
-                input0_files[i] = inputpath + PATHSTR('/') + filename0;
-                input1_files[i] = inputpath + PATHSTR('/') + filename1;
-                output_files[i] = outputpath + PATHSTR('/') + output_filename;
-                timesteps[i] = fx;
+                timesteps.push_back(current_time);
+
+                current_time += timestep;
+                while(current_time >= 1.0f)
+                {
+                    ++input_frame_index;
+                    current_time -= 1.0f;
+                }
+                if(std::abs(current_time) < 0.001f)
+                {
+                    current_time = 0.0f; // So interpolation can take left frame w/o running DAIN
+                }
+                if(std::abs(1.0f - current_time) < 0.001f)
+                {
+                    current_time = 1.0f;
+                }
             }
         }
         else if (inputpath.empty() && !path_is_directory(input0path) && !path_is_directory(input1path) && !path_is_directory(outputpath))
