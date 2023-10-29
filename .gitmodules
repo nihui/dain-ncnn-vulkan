@@ -4,3 +4,5 @@
 [submodule "src/libwebp"]
 	path = src/libwebp
 	url = https://github.com/webmproject/libwebp.git
+[submodule ".\\src\\ncnn\\"]
+	branch = 3116e02
